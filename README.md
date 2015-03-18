@@ -3,6 +3,8 @@ subspace
 
 A pragmatic interface to programmatically use Ansible. 
 
+## Example
+
 ```python
 import subspace
 import logging

@@ -1,7 +1,7 @@
 subspace
 ========
 
-A pragmatic interface to programmatically use Ansible. 
+A pragmatic interface to programmatically use [Ansible](https://github.com/ansible/ansible).
 
 ## Example
 

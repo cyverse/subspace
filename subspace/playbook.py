@@ -12,15 +12,19 @@ class PlayBook(object):
     @classmethod
     def factory(cls, playbook, inventory=None, stats=None, callbacks=None,
                 runner_callbacks=None, check=True, host_list=None, limit=None,
-                logger=None):
+                extra_vars=None, skip_tags=None, only_tags=["all"], logger=None):
         """
         :inventory: Ansible Inventory instance to setup.
         :limit: A dictionary or list of dictionaries limiting the PlayBook.
             Example:
             {"hostname": "server", "ip": "1.2.3.4"}
             or
-            [{"hostname": "server1", "ip": "1.2.3.4"}, 
+            [{"hostname": "server1", "ip": "1.2.3.4"},
              {"hostname": "server2", "ip": "1.2.3.5"}]
+        :extra_vars: A dictionary of unicode string keys and values that are
+                     passed as extra variables to the playbook.
+        :only_tags: A list of tags to run in the playbook. Defaults to all.
+        :skip_tags: A list of tags to skip in the playbook.
         """
         if logger:
             logging.use_logger(logger)
@@ -32,7 +36,10 @@ class PlayBook(object):
             stats=deps.stats,
             callbacks=deps.callbacks,
             runner_callbacks=deps.runner_callbacks,
-            check=check)
+            check=check,
+            extra_vars=extra_vars,
+            only_tags=only_tags,
+            skip_tags=skip_tags)
 
     @classmethod
     def _setup(cls, playbook, inventory, stats, callbacks, runner_callbacks,

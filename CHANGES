@@ -1,0 +1,6 @@
+* 0.1.0 Initial implementation
+
+* 0.1.2 Add extra_vars, only_tags and skip_tags to PlayBook.factory method.
+
+* 0.1.3 Add get_playbooks method which takes a directory and kwargs for the playbooks
+        and returns a list of PlayBooks.

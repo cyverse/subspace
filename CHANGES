@@ -4,3 +4,5 @@
 
 * 0.1.3 Add get_playbooks method which takes a directory and kwargs for the playbooks
         and returns a list of PlayBooks.
+
+* 0.1.4 Change PlayBook.factory method's check variable to default to False.

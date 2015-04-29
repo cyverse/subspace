@@ -15,7 +15,7 @@ class PlayBook(object):
 
     @classmethod
     def factory(cls, playbook, inventory=None, stats=None, callbacks=None,
-                runner_callbacks=None, check=True, host_list=None,
+                runner_callbacks=None, check=False, host_list=None,
                 limit=None, extra_vars=None, skip_tags=None,
                 only_tags=["all"], logger=None):
         """

@@ -5,7 +5,7 @@ from subprocess import Popen, PIPE
 from os.path import abspath, dirname
 
 
-VERSION = (0, 1, 4, 'dev', 0)
+VERSION = (0, 1, 5, 'dev', 0)
 
 
 git_match = "(?P<git_flag>git://)\S*#egg="\

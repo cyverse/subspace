@@ -10,4 +10,5 @@
 * 0.1.5 Update Ansible version to address a bug in the yum module.
 
 * 0.1.6 Add subspace.cache.bust method so hostnames can be reused in
-  	the cloud.
+  	the cloud. Add support for __all__. Import get_playbooks into subspace
+	module.

@@ -11,6 +11,9 @@ from ansible import utils
 from . import logging
 
 
+__all__ = ["PlayBook", "get_playbooks"]
+
+
 class PlayBook(object):
 
     @classmethod

@@ -116,7 +116,7 @@ class PlayBook(object):
         as expected.
         """
         host = inventory.get_host(limit["hostname"])
-        if host and host.vars:
+        if host and getattr(host, 'vars') == {}:
             host.vars["ansible_ssh_host"] = limit["ip"]
         else:
             raise Exception("The host (%s) is not in the "

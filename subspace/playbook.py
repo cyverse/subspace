@@ -115,13 +115,14 @@ class PlayBook(object):
         Check host and setup variables so limit/subset behaves
         as expected.
         """
-        host = inventory.get_host(limit["hostname"])
+        hostname = limit.get('hostname', 'Hostname-MISSING')
+        host = inventory.get_host(hostname)
         if host and type(getattr(host, 'vars')) == type({}):
             host.vars["ansible_ssh_host"] = limit["ip"]
         else:
             raise Exception("The host (%s) is not in the "
                             "Ansible inventory file %s." %
-                            (host, inventory.host_list))
+                            (hostname, inventory.host_list))
 
 
 def _get_files(directory):

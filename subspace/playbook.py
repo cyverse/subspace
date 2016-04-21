@@ -5,8 +5,6 @@ import operator
 import os
 
 import ansible.playbook
-from ansible import callbacks as ansible_callbacks
-from ansible import utils
 
 from . import logging
 
@@ -17,8 +15,7 @@ __all__ = ["PlayBook", "get_playbooks"]
 class PlayBook(object):
 
     @classmethod
-    def factory(cls, playbook, inventory=None, stats=None, callbacks=None,
-                runner_callbacks=None, check=False, host_list=None,
+    def factory(cls, playbook, inventory=None, check=False, host_list=None,
                 limit=None, extra_vars=None, skip_tags=None,
                 only_tags=["all"], logger=None):
         """
@@ -41,45 +38,24 @@ class PlayBook(object):
         """
         if logger:
             logging.use_logger(logger)
-        deps = PlayBook._setup(playbook, inventory, stats, callbacks,
-                               runner_callbacks, host_list, limit)
+        deps = PlayBook._setup(playbook, inventory, host_list, limit)
         return ansible.playbook.PlayBook(
             playbook=deps.playbook,
             inventory=deps.inventory,
-            stats=deps.stats,
-            callbacks=deps.callbacks,
-            runner_callbacks=deps.runner_callbacks,
             check=check,
             extra_vars=extra_vars,
             only_tags=only_tags,
             skip_tags=skip_tags)
 
     @classmethod
-    def _setup(cls, playbook, inventory, stats, callbacks, runner_callbacks,
-               host_list, limit):
+    def _setup(cls, playbook, inventory, host_list, limit):
         """
         Setup dependencies for the Ansible PlayBook and return them
         in a namedtuple.
         """
         deps = collections.namedtuple("Dependencies",
-                                      ["playbook", "inventory", "stats",
-                                       "callbacks", "runner_callbacks"])
+                                      ["playbook", "inventory",])
         deps.playbook = playbook
-        if stats is None:
-            deps.stats = ansible_callbacks.AggregateStats()
-        else:
-            deps.stats = stats
-        if callbacks is None:
-            deps.callbacks = ansible_callbacks.PlaybookCallbacks(
-                verbose=utils.VERBOSITY)
-        else:
-            deps.callbacks = callbacks
-        if runner_callbacks is None:
-            deps.runner_callbacks = ansible_callbacks.PlaybookRunnerCallbacks(
-                stats,
-                verbose=utils.VERBOSITY)
-        else:
-            deps.runner_callbacks = runner_callbacks
         if inventory is None:
             deps.inventory = ansible.inventory.Inventory(host_list=host_list)
             if limit:

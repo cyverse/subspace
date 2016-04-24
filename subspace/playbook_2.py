@@ -1,13 +1,15 @@
 import os
 import operator
 
-from tempfile import NamedTemporaryFile
+import logging
 
 from ansible.inventory import Inventory
 from ansible.vars import VariableManager
 from ansible.parsing.dataloader import DataLoader
 from ansible.executor import playbook_executor
 from ansible.utils.display import Display
+
+default_logger = logging.getLogger(__name__)
 
 
 class Options(object):
@@ -22,6 +24,10 @@ class Options(object):
                  sftp_extra_args=None, scp_extra_args=None, ssh_extra_args=None, poll_interval=None, seconds=None, check=None,
                  syntax=None, diff=None, force_handlers=None, flush_cache=None, listtasks=None, listtags=None, module_path=None,
                  logger=None):
+        # Dynamic sensible defaults
+        if not logger:
+            logger = default_logger
+        # Set your options
         self.verbosity = verbosity
         self.inventory = inventory
         self.listhosts = listhosts
@@ -103,19 +109,12 @@ class Runner(object):
         self.variable_manager = VariableManager()
         self.variable_manager.extra_vars = self.run_data
 
-        # Parse hosts, I haven't found a good way to
-        # pass hosts in without using a parsed template :(
-        # (Maybe you know how?)
-        self.hosts = NamedTemporaryFile(delete=False)
         if not os.path.exists(hosts_file):
             raise Exception("Could not find hosts file: %s" % hosts_file)
 
-        with open(hosts_file, 'r') as the_file:
-            self.hosts.write(the_file.read())
-        self.hosts.close()
 
         # Set inventory, using most of above objects
-        self.inventory = Inventory(loader=self.loader, variable_manager=self.variable_manager, host_list=self.hosts.name)
+        self.inventory = Inventory(loader=self.loader, variable_manager=self.variable_manager, host_list=hosts_file)
         self.variable_manager.set_inventory(self.inventory)
         hostname = None
         if self.options.subset:
@@ -139,7 +138,7 @@ class Runner(object):
         self.playbook = playbook
 
         hosts = self.inventory.get_hosts()
-        print "Running playbooks: %s on hosts: %s" % (playbooks, hosts)
+        self.options.logger.info("Running playbooks: %s on hosts: %s" % (playbooks, hosts))
         if hostname:
             variables = self.inventory.get_vars(hostname)
             group_names = variables.get('group_names',[])
@@ -147,7 +146,7 @@ class Runner(object):
                 file_path = group_vars_map.get(group_name,'')
                 if os.path.exists(file_path):
                     self.variable_manager.add_group_vars_file(file_path,self.loader)
-            print "Vars found: %s" % variables
+            self.options.logger "Vars found: %s" % variables
 
         # Setup playbook executor, but don't run until run() called
         self.pbex = playbook_executor.PlaybookExecutor(
@@ -157,34 +156,22 @@ class Runner(object):
             loader=self.loader,
             options=self.options,
             passwords=None)
-
+        self.pbex._tqm.load_callbacks()
         self.pbex._tqm.send_callback(
-            'set_logger',
-            logger=self.options.logger
+            'start_logging',
+            logger=self.options.logger,
+            username=self.run_data.get('ATMOUSERNAME',"No-User"),
         )
 
     def run(self):
         # Results of PlaybookExecutor in stats.
         self.pbex.run()
         stats = self.pbex._tqm._stats
-
-        # Test if success for record_logs
-        run_success = True
         hosts = sorted(stats.processed.keys())
         for h in hosts:
             t = stats.summarize(h)
             if t['unreachable'] > 0 or t['failures'] > 0:
                 run_success = False
-
-        # Dirty hack to send callback to save logs with data we want
-        # Note that function "record_logs" is one I created and put into
-        # the playbook callback file
-        self.pbex._tqm.send_callback(
-            'record_logs',
-            user_id=self.run_data['ATMOUSERNAME'],  # FIXME yo
-            success=run_success
-        )
-        os.remove(self.hosts.name)
         self.stats = stats
 
 
@@ -220,15 +207,17 @@ def get_playbook_runner(playbook, **kwargs):
            * Playbook files use the .yml file extension.
     """
     if 'extra_vars' in kwargs and 'run_data' not in kwargs:
-        print "WARNING: extra_vars is deprecated in ansible2.0 -- use run_data"
+        self.options.logger.warn(
+            "WARNING: Use 'run_data' to pass extra_vars to the playbook runner"
+        )
         run_data = kwargs['extra_vars']
     else:
         run_data = kwargs.get('run_data', {})
+
     host_file = kwargs.get('host_list')
     logger = kwargs.get('logger')
     group_vars_map = kwargs.get('group_vars_map')
     private_key_file = kwargs.get('private_key', 'No Private Key provided')
-    print "Use key: %s" % private_key_file
     runner = Runner(
         host_file,
         playbook=playbook,
@@ -236,7 +225,6 @@ def get_playbook_runner(playbook, **kwargs):
         run_data=run_data,
         group_vars_map=group_vars_map,
         limit_hosts=kwargs.get('limit_hosts'),
-        verbosity=4,
         logger=logger
     )
     return runner

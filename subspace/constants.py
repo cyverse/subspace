@@ -9,6 +9,7 @@ def reload_config():
     config_parser, file_loc = ansible_constants.load_config_file()
     reload(ansible_constants)
     reload(ansible.plugins)
+    reload(ansible.executor.task_queue_manager)
 
 
 def set_value(key, value):

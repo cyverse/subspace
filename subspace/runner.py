@@ -27,6 +27,14 @@ class RunnerOptions(object):
         # Dynamic sensible defaults
         if not logger:
             logger = default_logger
+        if not connection:
+            connection = 'smart'
+        if not become:
+            become = True
+        if not become_method:
+            become_method = 'sudo'
+        if not become_user:
+            become_user = 'root'
         # Set your options
         self.verbosity = verbosity
         self.inventory = inventory
@@ -82,31 +90,67 @@ class Runner(object):
     run_data = None
     variable_manager = None
 
-    def __init__(self, hosts_file, playbook, private_key_file, run_data,
-                 limit_hosts=None, group_vars_map={}, become_pass=None, verbosity=0, logger=None):
+    @classmethod
+    def factory(cls, host_file, playbook_path, logger,
+                **runner_options):
+        """
+        Walk the Directory structure and return an ordered list of
+        playbook objects.
+
+        :playbook_path: The directory/path to use for playbook list.
+        :runner_options: These keyword args will be passed into Runner
+
+        Notes: * Playbook files are identified as ending in .yml
+               * Playbooks are not executed until calling Runner.run()
+        """
+
+        if 'extra_vars' in runner_options and 'run_data' not in runner_options:
+            logger.warn(
+                "WARNING: Use 'run_data' to pass extra_vars into the playbooks"
+            )
+            run_data = runner_options['extra_vars']
+        else:
+            run_data = runner_options.pop('run_data', {})
+
+        runner = Runner(
+            host_file,
+            playbook_path,
+            run_data=run_data,
+            logger=logger,
+            **runner_options
+        )
+        return runner
+
+    def __init__(self, hosts_file, playbook_path, run_data, private_key_file,
+                 limit_hosts=None, limit_playbooks=None,
+                 group_vars_map={}, logger=None,
+                 use_password=None, **runner_opts_args):
 
         self.run_data = run_data
-
         self.options = RunnerOptions(
-                verbosity=verbosity,
                 private_key_file=private_key_file,
                 subset=limit_hosts,
-                connection='ssh',  # Need a connection type "smart" or "ssh"
                 logger=logger,
-                become=True,
-                become_method='sudo',
-                become_user='root',
+                **runner_opts_args
             )
 
         self._set_verbosity()
+        # Order matters here:
         self._set_loader()
         self._set_variable_manager()
         self._set_inventory(hosts_file)
-        self._set_playbooks(playbook)
-        self._set_hosts(group_vars_map)
+
+        # NOTE: Playbooks is usually a path
+        # ex:deploy_playbooks/ _OR_ util_playbooks/check_networking.yml
+        # it could also be a list of playbooks to be executed.
+        self._set_playbooks(playbook_path, limit_playbooks)
+        self._update_variables(group_vars_map)
 
         # Become Pass Needed if not logging in as user root
-        # passwords = {'become_pass': become_pass}
+        if use_password:
+            passwords = {'become_pass': use_password}
+        else:
+            passwords = None
 
         # Setup playbook executor, but don't run until run() called
         self.pbex = playbook_executor.PlaybookExecutor(
@@ -115,28 +159,23 @@ class Runner(object):
             variable_manager=self.variable_manager,
             loader=self.loader,
             options=self.options,
-            passwords=None)
+            passwords=passwords)
 
     def _include_group_vars(self, group_vars_map={}):
+        """
+        Look up group variables in the inventory file,
+        add to the variable_manager and loader
+        before creating a PlaybookExecutor
+        """
         variables = self.inventory.get_vars(self.host_limit)
-        group_names = variables.get('group_names',[])
+        group_names = variables.get('group_names', [])
         for group_name in group_names:
-            file_path = group_vars_map.get(group_name,'')
+            file_path = group_vars_map.get(group_name, '')
             if os.path.exists(file_path):
-                self.variable_manager.add_group_vars_file(file_path, self.loader)
-        self.options.logger.info("Vars found for hostname %s: %s" % (self.host_limit, variables))
-
-    def _set_playbooks_from_path(self, playbook_path):
-        # Convert file path to list of playbooks:
-        if not os.path.exists(playbook_path):
-            raise ValueError("Could not find path: %s" % (playbook_path,))
-
-        if os.path.isdir(playbook_path):
-            playbook_list = get_playbook_files(playbook_path)
-        else:
-            playbook_list = [playbook_path]
-
-        self.playbooks = playbook_list
+                self.variable_manager.add_group_vars_file(
+                    file_path, self.loader)
+        self.options.logger.info(
+            "Vars found for hostname %s: %s" % (self.host_limit, variables))
 
     def _set_verbosity(self):
         """
@@ -165,7 +204,10 @@ class Runner(object):
             raise Exception("Could not find hosts file: %s" % hosts_file)
 
         # Set inventory, using most of above objects
-        self.inventory = Inventory(loader=self.loader, variable_manager=self.variable_manager, host_list=hosts_file)
+        self.inventory = Inventory(
+            loader=self.loader,
+            variable_manager=self.variable_manager,
+            host_file=hosts_file)
         self.variable_manager.set_inventory(self.inventory)
 
         # --limit is defined by the 'subset' option and inventory kwarg.
@@ -181,105 +223,74 @@ class Runner(object):
             self.inventory.subset(hostname)
         return hostname
 
-    def _set_playbooks(self, playbook):
-        # Set playbooks as list or string
-        if isinstance(playbook, basestring):
-            self._set_playbooks_from_path(playbook)
-        elif isinstance(playbook, list):
-           self.playbooks = playbook
-        else:
-           raise TypeError("Expected 'playbook' as list or string, received %s" % type(playbook))
+    def _set_playbooks(self, playbook_path, limit_playbooks):
+        if not isinstance(playbook_path, basestring):
+            raise TypeError(
+                "Expected 'playbook_path' as string,"
+                " received %s" % type(playbook_path))
+        # Convert file path to list of playbooks:
+        if not os.path.exists(playbook_path):
+            raise ValueError("Could not find path: %s" % (playbook_path,))
 
-    def _set_hosts(self, group_vars_map):
+        if os.path.isdir(playbook_path):
+            playbook_list = self._get_playbook_files(
+                playbook_path, limit_playbooks)
+        else:
+            playbook_list = [playbook_path]
+
+        self.playbooks = playbook_list
+        return self.playbooks
+
+    def _get_playbook_files(self, playbook_dir, limit=[]):
+        """
+        Walk the Directory structure and return an ordered list of
+        playbook objects.
+
+        :directory: The directory to walk and search for playbooks.
+        Notes: * Playbook files are identified as ending in .yml
+        """
+        return [pb for pb in self._get_files(playbook_dir)
+                if not limit or pb.split('/')[-1] in limit]
+
+    def _get_files(self, directory):
+        """
+        Walk the directory and retrieve each yml file.
+        """
+        files = []
+        directories = list(os.walk(directory))
+        directories.sort(cmp=operator.lt)
+        for d in directories:
+            a_dir = d[0]
+            files_in_dir = d[2]
+            files_in_dir.sort()
+            if os.path.isdir(a_dir) and "playbooks" in a_dir:
+                for f in files_in_dir:
+                    if os.path.splitext(f)[1] == ".yml":
+                        files.append(os.path.join(a_dir, f))
+        return files
+
+    def _update_variables(self, group_vars_map):
+        """
+        Used primarily to include group variables in the inventory
+        """
         hosts = self.inventory.get_hosts()
-        self.options.logger.info("Running playbooks: %s on hosts: %s" % (self.playbooks, hosts))
+        self.options.logger.info(
+            "Running playbooks: %s on hosts: %s"
+            % (self.playbooks, hosts))
         if self.host_limit:
             self._include_group_vars(group_vars_map)
 
     def run(self):
+
         self.pbex._tqm.load_callbacks()
         self.pbex._tqm.send_callback(
             'start_logging',
             logger=self.options.logger,
-            username=self.run_data.get('ATMOUSERNAME',"No-User"),
+            username=self.run_data.get('ATMOUSERNAME', "No-User"),
         )
         # Results of PlaybookExecutor in stats.
         self.pbex.run()
         stats = self.pbex._tqm._stats
-        hosts = sorted(stats.processed.keys())
-        for h in hosts:
-            t = stats.summarize(h)
-            if t['unreachable'] > 0 or t['failures'] > 0:
-                run_success = False
         self.stats = stats
 
 
-def _get_files(directory):
-    """
-    Walk the directory and retrieve each yml file.
-    """
-    files = []
-    directories = list(os.walk(directory))
-    directories.sort(cmp=operator.lt)
-    for d in directories:
-        a_dir = d[0]
-        files_in_dir = d[2]
-        files_in_dir.sort()
-        if os.path.isdir(a_dir) and "playbooks" in a_dir:
-            for f in files_in_dir:
-                if os.path.splitext(f)[1] == ".yml":
-                    files.append(os.path.join(a_dir, f))
-    return files
-
-
-def get_playbook_runner(playbook, logger, **kwargs):
-    """
-    Walk the Directory structure and return an ordered list of
-    playbook objects.
-
-    :directory: The directory to walk and search for playbooks.
-    :kwargs: The keywords that will be passed to the PlayBook.factory method.
-
-    Notes: * Playbook files are identified as ending in .yml
-           * Playbooks are created using the same **kwargs.
-           * Playbooks are not run.
-           * Playbook files use the .yml file extension.
-    """
-
-    if 'extra_vars' in kwargs and 'run_data' not in kwargs:
-        logger.warn(
-            "WARNING: Use 'run_data' to pass extra_vars to the playbook runner"
-        )
-        run_data = kwargs['extra_vars']
-    else:
-        run_data = kwargs.get('run_data', {})
-
-    host_file = kwargs.get('host_list')
-    group_vars_map = kwargs.get('group_vars_map')
-    private_key_file = kwargs.get('private_key', 'No Private Key provided')
-    runner = Runner(
-        host_file,
-        playbook=playbook,
-        private_key_file=private_key_file,
-        run_data=run_data,
-        group_vars_map=group_vars_map,
-        limit_hosts=kwargs.get('limit_hosts'),
-        logger=logger
-    )
-    return runner
-
-
-def get_playbook_files(playbook_dir, limit=[]):
-    """
-    Walk the Directory structure and return an ordered list of
-    playbook objects.
-
-    :directory: The directory to walk and search for playbooks.
-    :kwargs: The keywords that will be passed to the PlayBook.factory method.
-
-    Notes: * Playbook files are identified as ending in .yml
-           * Playbooks are created using the same **kwargs.
-           * Playbooks are not run.
-           * Playbook files use the .yml file extension.
-    """
-    return [pb for pb in _get_files(playbook_dir) if not limit or pb.split('/')[-1] in limit]

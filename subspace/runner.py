@@ -161,21 +161,22 @@ class Runner(object):
             options=self.options,
             passwords=passwords)
 
-    def _include_group_vars(self, group_vars_map={}):
+    def _include_group_vars(self, host, group_vars_map={}):
         """
         Look up group variables in the inventory file,
         add to the variable_manager and loader
         before creating a PlaybookExecutor
         """
-        variables = self.inventory.get_vars(self.host_limit)
-        group_names = variables.get('group_names', [])
+        group_names = host.groups
         for group_name in group_names:
             file_path = group_vars_map.get(group_name, '')
             if os.path.exists(file_path):
                 self.variable_manager.add_group_vars_file(
                     file_path, self.loader)
+
+        variables = self.inventory.get_vars(host.name)
         self.options.logger.info(
-            "Vars found for hostname %s: %s" % (self.host_limit, variables))
+            "Vars found for hostname %s: %s" % (host.name, variables))
 
     def _set_verbosity(self):
         """
@@ -207,7 +208,7 @@ class Runner(object):
         self.inventory = Inventory(
             loader=self.loader,
             variable_manager=self.variable_manager,
-            host_file=hosts_file)
+            host_list=hosts_file)
         self.variable_manager.set_inventory(self.inventory)
 
         # --limit is defined by the 'subset' option and inventory kwarg.
@@ -277,11 +278,10 @@ class Runner(object):
         self.options.logger.info(
             "Running playbooks: %s on hosts: %s"
             % (self.playbooks, hosts))
-        if self.host_limit:
-            self._include_group_vars(group_vars_map)
+        for host in hosts:
+            self._include_group_vars(host, group_vars_map)
 
     def run(self):
-
         self.pbex._tqm.load_callbacks()
         self.pbex._tqm.send_callback(
             'start_logging',

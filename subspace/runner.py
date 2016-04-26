@@ -6,8 +6,11 @@ import logging
 from ansible.inventory import Inventory
 from ansible.vars import VariableManager
 from ansible.parsing.dataloader import DataLoader
-from ansible.executor import playbook_executor
 from ansible.utils.display import Display
+
+from subspace.executor import PlaybookExecutor
+from subspace.stats import SubspaceAggregateStats
+from subspace.task_queue_manager import TaskQueueManager
 
 default_logger = logging.getLogger(__name__)
 
@@ -16,14 +19,15 @@ class RunnerOptions(object):
     """
     RunnerOptions class to replace Ansible OptParser
     """
-    def __init__(self, verbosity=None, inventory=None, listhosts=None, subset=None, module_paths=None, extra_vars=None,
-                 forks=None, ask_vault_pass=None, vault_password_files=None, new_vault_password_file=None,
-                 output_file=None, tags=None, skip_tags=None, one_line=None, tree=None, ask_sudo_pass=None, ask_su_pass=None,
-                 sudo=None, sudo_user=None, become=None, become_method=None, become_user=None, become_ask_pass=None,
-                 ask_pass=None, private_key_file=None, remote_user=None, connection=None, timeout=None, ssh_common_args=None,
-                 sftp_extra_args=None, scp_extra_args=None, ssh_extra_args=None, poll_interval=None, seconds=None, check=None,
-                 syntax=None, diff=None, force_handlers=None, flush_cache=None, listtasks=None, listtags=None, module_path=None,
-                 logger=None):
+    def __init__(
+        self, verbosity=None, inventory=None, listhosts=None, subset=None, module_paths=None, extra_vars=None,
+        forks=None, ask_vault_pass=None, vault_password_files=None, new_vault_password_file=None,
+        output_file=None, tags=None, skip_tags=None, one_line=None, tree=None, ask_sudo_pass=None, ask_su_pass=None,
+        sudo=None, sudo_user=None, become=None, become_method=None, become_user=None, become_ask_pass=None,
+        ask_pass=None, private_key_file=None, remote_user=None, connection=None, timeout=None, ssh_common_args=None,
+        sftp_extra_args=None, scp_extra_args=None, ssh_extra_args=None, poll_interval=None, seconds=None, check=None,
+        syntax=None, diff=None, force_handlers=None, flush_cache=None, listtasks=None, listtags=None, module_path=None,
+        logger=None):
         # Dynamic sensible defaults
         if not logger:
             logger = default_logger
@@ -134,7 +138,6 @@ class Runner(object):
                 **runner_opts_args
             )
 
-        self._set_verbosity()
         # Order matters here:
         self._set_loader()
         self._set_variable_manager()
@@ -153,13 +156,21 @@ class Runner(object):
             passwords = None
 
         # Setup playbook executor, but don't run until run() called
-        self.pbex = playbook_executor.PlaybookExecutor(
-            playbooks=self.playbooks,
+        tqm = TaskQueueManager(
             inventory=self.inventory,
             variable_manager=self.variable_manager,
             loader=self.loader,
             options=self.options,
             passwords=passwords)
+        self.pbex = PlaybookExecutor(
+            playbooks=self.playbooks,
+            inventory=self.inventory,
+            variable_manager=self.variable_manager,
+            loader=self.loader,
+            options=self.options,
+            passwords=passwords,
+            tqm=tqm)
+        self._set_verbosity()
 
     def _include_group_vars(self, host, group_vars_map={}):
         """
@@ -187,7 +198,7 @@ class Runner(object):
         self.display.verbosity = self.options.verbosity
         # Executor appears to have it's own
         # verbosity object/setting as well
-        playbook_executor.verbosity = self.options.verbosity
+        self.pbex.verbosity = self.options.verbosity
 
     def _set_loader(self):
         # Gets data from YAML/JSON files
@@ -281,7 +292,31 @@ class Runner(object):
         for host in hosts:
             self._include_group_vars(host, group_vars_map)
 
+    def _get_playbook_name(self, playbook):
+        key_name = ''
+        with open(playbook,'r') as the_file:
+            for line in the_file.readlines():
+                if 'name:' in line.strip():
+                    # This is the name you will find in stats.
+                    key_name = line.replace('name:','').replace('- ','').strip()
+        if not key_name:
+            raise Exception(
+                "Unnamed playbooks will not allow CustomSubspaceStats to work properly.")
+        return key_name
+
+    def _get_playbook_map(self):
+        """
+        """
+        playbook_map = {
+            self._get_playbook_name(playbook): playbook
+            for playbook in self.playbooks}
+        if len(playbook_map) != len(self.playbooks):
+            raise ValueError("Non unique names in your playbooks will not allow CustomSubspaceStats to work properly. %s" % self.playbooks)
+        return playbook_map
+
     def run(self):
+        playbook_map = self._get_playbook_map()
+        self.pbex._tqm._stats = SubspaceAggregateStats(playbook_map)
         self.pbex._tqm.load_callbacks()
         self.pbex._tqm.send_callback(
             'start_logging',

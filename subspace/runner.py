@@ -6,7 +6,9 @@ import logging
 from ansible.inventory import Inventory
 from ansible.vars import VariableManager
 from ansible.parsing.dataloader import DataLoader
+
 from ansible.utils.display import Display
+global_display = Display()
 
 from subspace.executor import PlaybookExecutor
 from subspace.stats import SubspaceAggregateStats
@@ -14,13 +16,12 @@ from subspace.task_queue_manager import TaskQueueManager
 
 default_logger = logging.getLogger(__name__)
 
-
 class RunnerOptions(object):
     """
     RunnerOptions class to replace Ansible OptParser
     """
     def __init__(
-        self, verbosity=None, inventory=None, listhosts=None, subset=None, module_paths=None, extra_vars=None,
+        self, verbosity=0, inventory=None, listhosts=None, subset=None, module_paths=None, extra_vars=None,
         forks=None, ask_vault_pass=None, vault_password_files=None, new_vault_password_file=None,
         output_file=None, tags=None, skip_tags=None, one_line=None, tree=None, ask_sudo_pass=None, ask_su_pass=None,
         sudo=None, sudo_user=None, become=None, become_method=None, become_user=None, become_ask_pass=None,
@@ -162,6 +163,7 @@ class Runner(object):
             loader=self.loader,
             options=self.options,
             passwords=passwords)
+        self._set_verbosity()
         self.pbex = PlaybookExecutor(
             playbooks=self.playbooks,
             inventory=self.inventory,
@@ -170,7 +172,6 @@ class Runner(object):
             options=self.options,
             passwords=passwords,
             tqm=tqm)
-        self._set_verbosity()
 
     def _include_group_vars(self, host, group_vars_map={}):
         """
@@ -194,11 +195,7 @@ class Runner(object):
         FIXME: Prove that this works.
         """
         # Set global verbosity
-        self.display = Display()
-        self.display.verbosity = self.options.verbosity
-        # Executor appears to have it's own
-        # verbosity object/setting as well
-        self.pbex.verbosity = self.options.verbosity
+        global_display.verbosity = self.options.verbosity
 
     def _set_loader(self):
         # Gets data from YAML/JSON files

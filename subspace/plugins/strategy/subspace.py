@@ -81,7 +81,7 @@ class StrategyModule(AnsibleLinearStrategyModule, AnsibleStrategyBase):
                                         ),
                                     )
                         else:
-                            self._tqm._stats.increment('ok', host.nam, iterator._play, task)
+                            self._tqm._stats.increment('ok', host.name, iterator._play, task)
                         self._tqm.send_callback('v2_runner_on_failed', task_result, ignore_errors=task.ignore_errors)
                     elif result[0] == 'host_unreachable':
                         self._tqm._unreachable_hosts[host.name] = True

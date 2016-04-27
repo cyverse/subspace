@@ -14,6 +14,8 @@ try:
 except ImportError:
     from ansible.utils.display import Display
     display = Display()
+from ansible.plugins.strategy.linear import StrategyModule \
+    as AnsibleLinearStrategy
 
 from ansible.executor.task_queue_manager import TaskQueueManager \
     as AnsibleTaskQueueManager
@@ -69,12 +71,13 @@ class TaskQueueManager(AnsibleTaskQueueManager):
         subspace_dir = os.path.dirname(__file__)
         strategy_loader.config = os.path.join(subspace_dir, 'plugins/strategy')
         strategy = strategy_loader.get(new_play.strategy, self)
+
         # IF the method for loading strategy fails, this hack will ensure
         # 'Subspace' linear strategy is what gets used.
-        if strategy is None:
+        if strategy is None or not isinstance(strategy, StrategyModule):
             strategy = StrategyModule(self)
 
-        if strategy is None:
+        if not isinstance(strategy, StrategyModule):
             raise AnsibleError("Invalid play strategy specified: %s" % new_play.strategy, obj=play._ds)
 
         # build the iterator

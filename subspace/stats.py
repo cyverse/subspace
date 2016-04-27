@@ -35,8 +35,15 @@ class SubspaceAggregateStats:
         host_playbook_dict = stat_dict.get(host, {})
         playbook_key = self.playbook_map[play.name]
         playbook_role_dict = host_playbook_dict.get(playbook_key, {})
-        task_count = playbook_role_dict.get(task._role, 0)
-        playbook_role_dict[task._role] = task_count + 1
+        if not task:
+            role_key = "Unnamed Task"
+        elif not task._role:
+            role_key = "Unnamed Role"
+            print "WARNING: There is something fishy here: %s" % (task.__dict__,)
+        else:
+            role_key = task._role._role_name
+        task_count = playbook_role_dict.get(role_key, 0)
+        playbook_role_dict[role_key] = task_count + 1
         host_playbook_dict[playbook_key] = playbook_role_dict
         stat_dict[host] = host_playbook_dict
 

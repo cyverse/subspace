@@ -28,10 +28,10 @@ with open('requirements.txt') as r:
     required = r.readlines()
 
 for required_str in required:
-    if '#GIT:' in required_str:
-        install_requires.append(
-            required_str.replace("#GIT:","").strip()
-        )
+    # if '#GIT:' in required_str:
+    #     install_requires.append(
+    #         required_str.replace("#GIT:","").strip()
+    #     )
     if 'git+' in required_str:
         dependency_links.append(
             required_str.strip()

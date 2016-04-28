@@ -163,7 +163,9 @@ class Runner(object):
             loader=self.loader,
             options=self.options,
             passwords=passwords)
-        self._set_verbosity()
+        # Someday, we may have a method for this.
+        # For now, use 'debug = True' in ansible.cfg
+        # self._set_verbosity()
         self.pbex = PlaybookExecutor(
             playbooks=self.playbooks,
             inventory=self.inventory,
@@ -192,10 +194,9 @@ class Runner(object):
 
     def _set_verbosity(self):
         """
-        FIXME: Prove that this works.
+        NOTE: Use 'debug = True' in ansible.cfg to get full verbosity
         """
-        # Set global verbosity
-        global_display.verbosity = self.options.verbosity
+        pass
 
     def _set_loader(self):
         # Gets data from YAML/JSON files

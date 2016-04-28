@@ -22,24 +22,8 @@ pip install git+git://git@github.com:iPlantCollaborativeOpenSource/subspace.git
 For more information, please see: https://github.com/iPlantCollaborativeOpenSource/subspace
 """ % (get_version('short'), readme)
 
-dependency_links = []
-install_requires = []
 with open('requirements.txt') as r:
     required = r.readlines()
-
-for required_str in required:
-    # if '#GIT:' in required_str:
-    #     install_requires.append(
-    #         required_str.replace("#GIT:","").strip()
-    #     )
-    if 'git+' in required_str:
-        dependency_links.append(
-            required_str.strip()
-        )
-
-# Clean up the requirements.txt and include the 'expected' git installs
-required = [r_str for r_str in required if 'git+' not in r_str]
-required.extend(install_requires)
 
 setuptools.setup(
     name='subspace',
@@ -52,7 +36,6 @@ setuptools.setup(
     url="https://github.com/iPlantCollaborativeOpenSource/subspace",
     packages=setuptools.find_packages(),
     install_requires=required,
-    dependency_links=dependency_links,
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",

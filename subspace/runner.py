@@ -322,7 +322,11 @@ class Runner(object):
             username=self.run_data.get('ATMOUSERNAME', "No-User"),
         )
         # Results of PlaybookExecutor in stats.
-        self.pbex.run()
+        try:
+            self.pbex.run()
+        except AttributeError as ignore_cleanup_error:
+            if 'terminate' in ignore_cleanup_error.msg:
+                pass
         stats = self.pbex._tqm._stats
         self.stats = stats
 

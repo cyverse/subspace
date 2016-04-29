@@ -1,4 +1,8 @@
-from . import constants
+try:
+    from . import constants
+except ImportError:
+    constants = None
+
 from .version import VERSION
 import cache
 

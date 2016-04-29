@@ -1,10 +1,11 @@
 try:
     from . import constants
+    import cache
 except ImportError:
     constants = None
+    cache = None
 
 from .version import VERSION
-import cache
 
 __all__ = ['constants', 'set_constants', 'VERSION', 'cache']
 

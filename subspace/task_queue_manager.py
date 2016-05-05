@@ -63,9 +63,8 @@ class TaskQueueManager(AnsibleTaskQueueManager):
         # initialize the shared dictionary containing the notified handlers
         self._initialize_notified_handlers(new_play.handlers)
 
-        # load the specified strategy (or the default linear one)
-        if new_play.strategy == 'linear':
-            new_play.strategy = self.default_strategy
+        # NOTE: Require *ALL* strategies to use subspace-linear for now.
+        new_play.strategy = self.default_strategy
 
         # NOTE: This is a hack for pre ansible v2.1
         subspace_dir = os.path.dirname(__file__)

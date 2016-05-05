@@ -26,8 +26,16 @@ class SubspaceAggregateStats:
         self.changed   = {}
         self.skipped   = {}
 
-    def increment(self, what, host, play, task):
+    def original_increment(self, what, host):
+        self.processed[host] = 1
+        prev = (getattr(self, what)).get(host, 0)
+        getattr(self, what)[host] = prev+1
+        return
+
+    def increment(self, what, host, play=None, task=None):
         ''' helper function to bump a statistic '''
+        if not play and not task:
+            return self.original_increment(what, host)
 
         self.processed[host] = 1
 
@@ -46,6 +54,7 @@ class SubspaceAggregateStats:
         playbook_role_dict[role_key] = task_count + 1
         host_playbook_dict[playbook_key] = playbook_role_dict
         stat_dict[host] = host_playbook_dict
+        return
 
 
     def summarize(self, host):

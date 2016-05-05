@@ -5,6 +5,7 @@ import logging
 
 from ansible.inventory import Inventory
 from ansible.vars import VariableManager
+from ansible.utils.vars import load_options_vars
 from ansible.parsing.dataloader import DataLoader
 
 from ansible.utils.display import Display
@@ -181,13 +182,14 @@ class Runner(object):
         add to the variable_manager and loader
         before creating a PlaybookExecutor
         """
-        group_names = host.groups
-        for group_name in group_names:
-            file_path = group_vars_map.get(group_name, '')
+        host_groups = host.groups
+        for group in host_groups:
+            file_path = group_vars_map.get(group.name, '')
             if os.path.exists(file_path):
+                self.options.logger.info(
+                    "Adding group_vars file: %s" % (file_path,))
                 self.variable_manager.add_group_vars_file(
-                    file_path, self.loader)
-
+                    file_path, loader=self.loader)
         variables = self.inventory.get_vars(host.name)
         self.options.logger.info(
             "Vars found for hostname %s: %s" % (host.name, variables))
@@ -208,6 +210,7 @@ class Runner(object):
         # All the variables from all the various places
         self.variable_manager = VariableManager()
         self.variable_manager.extra_vars = self.run_data
+        self.variable_manager.options_vars = load_options_vars(self.options)
 
     def _set_inventory(self, hosts_file):
         if not os.path.exists(hosts_file):

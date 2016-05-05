@@ -150,6 +150,13 @@ class CallbackModule(CallbackBase):
         msg = "skipping: [%s] => (item=%s) " % (result._host.get_name(), result._result['item'])
         self.play_logger.log.info(msg)
 
+    def get_total(self, status_dict):
+        count = 0
+        for playbook_name, playbook_tasks in status_dict.items():
+            for task_name, result in playbook_tasks.items():
+                count += result
+        return count
+
     def v2_playbook_on_stats(self, stats):
         run_time = datetime.now() - self.start_time
 
@@ -159,11 +166,11 @@ class CallbackModule(CallbackBase):
 
             msg = "PLAY RECAP [%s] : %s %s %s %s %s %s" % (
                 h,
-                "ok: %s" % (t['ok']),
-                "changed: %s" % (t['changed']),
-                "unreachable: %s" % (t['unreachable']),
-                "skipped: %s" % (t['skipped']),
-                "failed: %s" % (t['failures']),
+                "ok: %s" % (self.get_total(t['ok'])),
+                "changed: %s" % (self.get_total(t['changed'])),
+                "unreachable: %s" % (self.get_total(t['unreachable'])),
+                "skipped: %s" % (self.get_total(t['skipped'])),
+                "failed: %s" % (self.get_total(t['failures'])),
                 "runtime: %s seconds" % run_time.seconds
             )
             self.play_logger.log.info(msg)

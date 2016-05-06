@@ -58,9 +58,9 @@ class CallbackModule(CallbackBase):
             self._process_items(result)  # item_on_failed, item_on_skipped, item_on_ok
         else:
             if delegated_vars:
-                self.play_logger.log.info("fatal: [%s -> %s]: FAILED! => %s" % (result._host.get_name(), delegated_vars['ansible_host'], self._dump_results(result._result)))
+                self.play_logger.log.error("fatal: [%s -> %s]: FAILED! => %s" % (result._host.get_name(), delegated_vars['ansible_host'], self._dump_results(result._result)))
             else:
-                self.play_logger.log.info("fatal: [%s]: FAILED! => %s" % (result._host.get_name(), self._dump_results(result._result)))
+                self.play_logger.log.error("fatal: [%s]: FAILED! => %s" % (result._host.get_name(), self._dump_results(result._result)))
 
     def v2_runner_on_ok(self, result):
         self._clean_results(result._result, result._task.action)
@@ -93,12 +93,12 @@ class CallbackModule(CallbackBase):
     def v2_runner_on_unreachable(self, result):
         delegated_vars = result._result.get('_ansible_delegated_vars', None)
         if delegated_vars:
-            self.play_logger.log.info("fatal: [%s -> %s]: UNREACHABLE! => %s" % (result._host.get_name(), delegated_vars['ansible_host'], self._dump_results(result._result)))
+            self.play_logger.log.error("fatal: [%s -> %s]: UNREACHABLE! => %s" % (result._host.get_name(), delegated_vars['ansible_host'], self._dump_results(result._result)))
         else:
-            self.play_logger.log.info("fatal: [%s]: UNREACHABLE! => %s" % (result._host.get_name(), self._dump_results(result._result)))
+            self.play_logger.log.error("fatal: [%s]: UNREACHABLE! => %s" % (result._host.get_name(), self._dump_results(result._result)))
 
     def v2_runner_on_no_hosts(self, task):
-        self.play_logger.log.info("skipping: no hosts matched")
+        self.play_logger.log.warn("skipping: no hosts matched")
 
     def v2_playbook_on_task_start(self, task, is_conditional):
         self.play_logger.log.info("TASK [%s]" % task.get_name().strip())

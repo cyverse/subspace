@@ -162,18 +162,31 @@ class CallbackModule(CallbackBase):
 
         hosts = sorted(stats.processed.keys())
         for h in hosts:
-            t = stats.summarize(h)
+            self._traditional_summary(stats, h, run_time)
+            self.playbook_summary(stats, h, run_time)
 
-            msg = "PLAY RECAP [%s] : %s %s %s %s %s %s" % (
-                h,
-                "ok: %s" % (self.get_total(t['ok'])),
-                "changed: %s" % (self.get_total(t['changed'])),
-                "unreachable: %s" % (self.get_total(t['unreachable'])),
-                "skipped: %s" % (self.get_total(t['skipped'])),
-                "failed: %s" % (self.get_total(t['failures'])),
-                "runtime: %s seconds" % run_time.seconds
-            )
-            self.play_logger.log.info(msg)
+    def playbook_summary(self, stats, h, run_time):
+        playbook_summary = stats.summarize_playbooks(h)
+        msg = "PLAYBOOK RECAP [%s] Runtime: %s : %s" % (
+            h,
+            run_time,
+            playbook_summary
+        )
+        self.play_logger.log.info(msg)
+
+    def _traditional_summary(self, stats, h, run_time):
+        t = stats.summarize(h)
+
+        msg = "PLAY RECAP [%s] : %s %s %s %s %s %s" % (
+            h,
+            "ok: %s" % (self.get_total(t['ok'])),
+            "changed: %s" % (self.get_total(t['changed'])),
+            "unreachable: %s" % (self.get_total(t['unreachable'])),
+            "skipped: %s" % (self.get_total(t['skipped'])),
+            "failed: %s" % (self.get_total(t['failures'])),
+            "runtime: %s seconds" % run_time.seconds
+        )
+        self.play_logger.log.info(msg)
 
     def start_logging(self, logger=None, username=None):
         """

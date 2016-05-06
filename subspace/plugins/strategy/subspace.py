@@ -11,6 +11,12 @@ from ansible.compat.six.moves import queue as Queue
 from ansible.inventory.host import Host
 from ansible.vars.unsafe_proxy import wrap_var
 
+#Some deep level cruft
+from ansible.compat.six import iteritems, text_type, string_types
+from ansible.playbook.helpers import load_list_of_blocks
+from ansible.executor.task_result import TaskResult
+from ansible.errors import AnsibleParserError
+
 from ansible.plugins.strategy import StrategyBase \
     as AnsibleStrategyBase
 from ansible.plugins.strategy.linear import StrategyModule \
@@ -211,3 +217,71 @@ class StrategyModule(AnsibleLinearStrategyModule, AnsibleStrategyBase):
                 break
 
         return ret_results
+
+    def _load_included_file(self, included_file, iterator, is_handler=False):
+        '''
+        Loads an included YAML file of tasks, applying the optional set of variables.
+        '''
+
+        display.debug("loading included file: %s" % included_file._filename)
+        try:
+            data = self._loader.load_from_file(included_file._filename)
+            if data is None:
+                return []
+            elif not isinstance(data, list):
+                raise AnsibleError("included task files must contain a list of tasks")
+
+            block_list = load_list_of_blocks(
+                data,
+                play=included_file._task._block._play,
+                parent_block=None,
+                task_include=included_file._task,
+                role=included_file._task._role,
+                use_handlers=is_handler,
+                loader=self._loader,
+                variable_manager=self._variable_manager,
+            )
+
+            # since we skip incrementing the stats when the task result is
+            # first processed, we do so now for each host in the list
+            for host in included_file._hosts:
+                self._tqm._stats.increment('ok', host.name, included_file._task._block._play, included_file._task)
+                #self._tqm._stats.increment('ok', host.name)
+
+        except AnsibleError as e:
+            # mark all of the hosts including this file as failed, send callbacks,
+            # and increment the stats for this host
+            for host in included_file._hosts:
+                tr = TaskResult(host=host, task=included_file._task, return_data=dict(failed=True, reason=to_unicode(e)))
+                iterator.mark_host_failed(host)
+                self._tqm._failed_hosts[host.name] = True
+                self._tqm._stats.increment('failures', host.name, included_file._task._block._play, included_file._task)
+                #self._tqm._stats.increment('failures', host.name)
+                self._tqm.send_callback('v2_runner_on_failed', tr)
+            return []
+
+        # set the vars for this task from those specified as params to the include
+        for b in block_list:
+            # first make a copy of the including task, so that each has a unique copy to modify
+            b._task_include = b._task_include.copy()
+            # then we create a temporary set of vars to ensure the variable reference is unique
+            temp_vars = b._task_include.vars.copy()
+            temp_vars.update(included_file._args.copy())
+            # pop tags out of the include args, if they were specified there, and assign
+            # them to the include. If the include already had tags specified, we raise an
+            # error so that users know not to specify them both ways
+            tags = temp_vars.pop('tags', [])
+            if isinstance(tags, string_types):
+                tags = tags.split(',')
+            if len(tags) > 0:
+                if len(b._task_include.tags) > 0:
+                    raise AnsibleParserError("Include tasks should not specify tags in more than one way (both via args and directly on the task). Mixing tag specify styles is prohibited for whole import hierarchy, not only for single import statement",
+                            obj=included_file._task._ds)
+                display.deprecated("You should not specify tags in the include parameters. All tags should be specified using the task-level option")
+                b._task_include.tags = tags
+            b._task_include.vars = temp_vars
+
+        # finally, send the callback and return the list of blocks loaded
+        self._tqm.send_callback('v2_playbook_on_include', included_file)
+        display.debug("done processing included file")
+        return block_list

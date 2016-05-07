@@ -27,10 +27,18 @@ except ImportError:
     from ansible.utils.display import Display
     display = Display()
 
+from subspace.task_queue_manager import TaskQueueManager as SubspaceTQM
 __all__ = ['StrategyModule']
 
 
 class StrategyModule(AnsibleLinearStrategyModule, AnsibleStrategyBase):
+    def dynamic_increment(self, what, host_name, play, task):
+        if type(self._tqm) == SubspaceTQM:
+            return self._tqm._stats.increment(what, host_name, iterator._play, task)
+        else:
+            self._tqm.send_callback('record_log', "Using the 'traditional' TQM results in loss of functionality")
+            return self._tqm._stats.increment(what, host_name)
+            
     def _process_pending_results(self, iterator, one_pass=False):
         '''
         Reads results off the final queue and takes appropriate action
@@ -71,7 +79,7 @@ class StrategyModule(AnsibleLinearStrategyModule, AnsibleStrategyBase):
                             # been failed by the iterator
                             if iterator.is_failed(host):
                                 self._tqm._failed_hosts[host.name] = True
-                                self._tqm._stats.increment('failures', host.name, iterator._play, task)
+                                self.dynamic_increment('failures', host.name, iterator._play, task)
                             else:
                                 # otherwise, we grab the current state and if we're iterating on
                                 # the rescue portion of a block then we save the failed task in a
@@ -87,20 +95,20 @@ class StrategyModule(AnsibleLinearStrategyModule, AnsibleStrategyBase):
                                         ),
                                     )
                         else:
-                            self._tqm._stats.increment('ok', host.name, iterator._play, task)
+                            self.dynamic_increment('ok', host.name, iterator._play, task)
                         self._tqm.send_callback('v2_runner_on_failed', task_result, ignore_errors=task.ignore_errors)
                     elif result[0] == 'host_unreachable':
                         self._tqm._unreachable_hosts[host.name] = True
-                        self._tqm._stats.increment('dark', host.name, iterator._play, task)
+                        self.dynamic_increment('dark', host.name, iterator._play, task)
                         self._tqm.send_callback('v2_runner_on_unreachable', task_result)
                     elif result[0] == 'host_task_skipped':
-                        self._tqm._stats.increment('skipped', host.name, iterator._play, task)
+                        self.dynamic_increment('skipped', host.name, iterator._play, task)
                         self._tqm.send_callback('v2_runner_on_skipped', task_result)
                     elif result[0] == 'host_task_ok':
                         if task.action != 'include':
-                            self._tqm._stats.increment('ok', host.name, iterator._play, task)
+                            self.dynamic_increment('ok', host.name, iterator._play, task)
                             if 'changed' in task_result._result and task_result._result['changed']:
-                                self._tqm._stats.increment('changed', host.name, iterator._play, task)
+                                self.dynamic_increment('changed', host.name, iterator._play, task)
                             self._tqm.send_callback('v2_runner_on_ok', task_result)
 
                         if self._diff:
@@ -245,8 +253,7 @@ class StrategyModule(AnsibleLinearStrategyModule, AnsibleStrategyBase):
             # since we skip incrementing the stats when the task result is
             # first processed, we do so now for each host in the list
             for host in included_file._hosts:
-                self._tqm._stats.increment('ok', host.name, included_file._task._block._play, included_file._task)
-                #self._tqm._stats.increment('ok', host.name)
+                self.dynamic_increment('ok', host.name, included_file._task._block._play, included_file._task)
 
         except AnsibleError as e:
             # mark all of the hosts including this file as failed, send callbacks,
@@ -255,8 +262,7 @@ class StrategyModule(AnsibleLinearStrategyModule, AnsibleStrategyBase):
                 tr = TaskResult(host=host, task=included_file._task, return_data=dict(failed=True, reason=to_unicode(e)))
                 iterator.mark_host_failed(host)
                 self._tqm._failed_hosts[host.name] = True
-                self._tqm._stats.increment('failures', host.name, included_file._task._block._play, included_file._task)
-                #self._tqm._stats.increment('failures', host.name)
+                self.dynamic_increment('failures', host.name, included_file._task._block._play, included_file._task)
                 self._tqm.send_callback('v2_runner_on_failed', tr)
             return []
 

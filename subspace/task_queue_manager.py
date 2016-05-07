@@ -19,7 +19,6 @@ from ansible.plugins.strategy.linear import StrategyModule \
 
 from ansible.executor.task_queue_manager import TaskQueueManager \
     as AnsibleTaskQueueManager
-from subspace.plugins.strategy.subspace import StrategyModule
 
 class TaskQueueManager(AnsibleTaskQueueManager):
 
@@ -63,21 +62,18 @@ class TaskQueueManager(AnsibleTaskQueueManager):
         # initialize the shared dictionary containing the notified handlers
         self._initialize_notified_handlers(new_play.handlers)
 
-        # NOTE: Require *ALL* strategies to use subspace-linear for now.
+        # NOTE: Requires *ALL* strategies to use subspace-linear for now.
         new_play.strategy = self.default_strategy
 
-        # NOTE: This is a hack for pre ansible v2.1
+	# NOTE: these lines can be removed upon release of ansi-2.1
         subspace_dir = os.path.dirname(__file__)
         strategy_loader.config = os.path.join(subspace_dir, 'plugins/strategy')
         strategy = strategy_loader.get(new_play.strategy, self)
 
-        # IF the method for loading strategy fails, this hack will ensure
+        # IF the method for loading strategy fails,
+        #  this hack will ensure
         # 'Subspace' linear strategy is what gets used.
-        if strategy is None or not isinstance(strategy, StrategyModule):
-            strategy = StrategyModule(self)
-
-        if not isinstance(strategy, StrategyModule):
-            raise AnsibleError("Invalid play strategy specified: %s" % new_play.strategy, obj=play._ds)
+        self._ensure_subspace_plugin()
 
         # build the iterator
         iterator = PlayIterator(
@@ -99,3 +95,11 @@ class TaskQueueManager(AnsibleTaskQueueManager):
         play_return = strategy.run(iterator, play_context)
         self._cleanup_processes()
         return play_return
+
+    def _ensure_subspace_plugin(self):
+        from subspace.plugins.strategy.subspace import StrategyModule
+        if strategy is None or not isinstance(strategy, StrategyModule):
+            strategy = StrategyModule(self)
+
+        if not isinstance(strategy, StrategyModule):
+            raise AnsibleError("Invalid play strategy specified: %s" % new_play.strategy, obj=play._ds)

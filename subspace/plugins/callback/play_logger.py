@@ -168,6 +168,9 @@ class CallbackModule(CallbackBase):
             self.playbook_summary(stats, h, run_time)
 
     def playbook_summary(self, stats, h, run_time):
+        if not hasattr(stats, 'summarize_playbooks'):
+            self.play_logger.log.info("This execution is not using the subspace playbook executor. Default log shown")
+            return
         playbook_summary = stats.summarize_playbooks(h)
         msg = "PLAYBOOK RECAP [%s] Runtime: %s : %s" % (
             h,
@@ -202,4 +205,18 @@ class CallbackModule(CallbackBase):
             self.play_logger.set_logger(logger)
         if username:
             self.play_logger.log.debug("Username set: %s" % self.username)
+        # NOTE: We may want to 're-set' the `start_time` here
+
+    def record_log(self, message=None, level='info'):
+        """
+        Special callback added to this callback plugin
+        * Called by Strategy objet
+        :param logger:
+        :return:
+        """
+        if level not in ['debug','info','warn','error']:
+           self.play_logger.log.error("Invalid level: %s" % level)
+           level = 'warn'
+        if message:
+            getattr(self.play_logger.log, level)(message)
         # NOTE: We may want to 're-set' the `start_time` here

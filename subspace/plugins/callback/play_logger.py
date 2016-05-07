@@ -9,7 +9,7 @@ import logging
 default_logger = logging.getLogger(__name__)
 default_logger.setLevel(logging.DEBUG)
 stderr_handler = logging.StreamHandler(sys.stderr)
-default_logger.addHandler(stderr_handler)
+# default_logger.addHandler(stderr_handler)
 
 class PythonLogger:
     """

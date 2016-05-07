@@ -1,9 +1,15 @@
 import os
+import sys
 
 from datetime import datetime
 
 from ansible.plugins.callback import CallbackBase
+import logging
 
+default_logger = logging.getLogger(__name__)
+default_logger.setLevel(logging.DEBUG)
+stderr_handler = logging.StreamHandler(sys.stderr)
+default_logger.addHandler(stderr_handler)
 
 class PythonLogger:
     """
@@ -32,9 +38,12 @@ class CallbackModule(CallbackBase):
 
     def __init__(self, python_play_logger=None, username=None):
         super(CallbackModule, self).__init__()
-        self.play_logger = PythonLogger()
-        self.start_time = datetime.now()
+        if not python_play_logger:
+            python_play_logger = default_logger
+        self.play_logger = PythonLogger(python_play_logger)
         self.username = username
+        # Start counting time from creation to completion of exection.
+        self.start_time = datetime.now()
 
     def __unicode__(self):
         return "Callback logger for Username:%s" % self.username
@@ -150,13 +159,6 @@ class CallbackModule(CallbackBase):
         msg = "skipping: [%s] => (item=%s) " % (result._host.get_name(), result._result['item'])
         self.play_logger.log.info(msg)
 
-    def get_total(self, status_dict):
-        count = 0
-        for playbook_name, playbook_tasks in status_dict.items():
-            for task_name, result in playbook_tasks.items():
-                count += result
-        return count
-
     def v2_playbook_on_stats(self, stats):
         run_time = datetime.now() - self.start_time
 
@@ -179,11 +181,11 @@ class CallbackModule(CallbackBase):
 
         msg = "PLAY RECAP [%s] : %s %s %s %s %s %s" % (
             h,
-            "ok: %s" % (self.get_total(t['ok'])),
-            "changed: %s" % (self.get_total(t['changed'])),
-            "unreachable: %s" % (self.get_total(t['unreachable'])),
-            "skipped: %s" % (self.get_total(t['skipped'])),
-            "failed: %s" % (self.get_total(t['failures'])),
+            "ok: %s" % (t['ok']),
+            "changed: %s" % (t['changed']),
+            "unreachable: %s" % (t['unreachable']),
+            "skipped: %s" % (t['skipped']),
+            "failed: %s" % (t['failures']),
             "runtime: %s seconds" % run_time.seconds
         )
         self.play_logger.log.info(msg)
@@ -191,10 +193,13 @@ class CallbackModule(CallbackBase):
     def start_logging(self, logger=None, username=None):
         """
         Special callback added to this callback plugin
-        Called by Runner objet
+        * Called by Runner objet
         :param logger:
         :return:
         """
         self.username = username
-        self.play_logger.set_logger(logger)
-        print "Username set: %s" % self.username
+        if logger:
+            self.play_logger.set_logger(logger)
+        if username:
+            self.play_logger.log.debug("Username set: %s" % self.username)
+        # NOTE: We may want to 're-set' the `start_time` here

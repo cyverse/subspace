@@ -41,18 +41,18 @@ class SubspaceAggregateStats:
         self.skipped   = {}
 
     def original_increment(self, what, host):
-        self.processed[host] = 1
         prev = (getattr(self, what)).get(host, 0)
         getattr(self, what)[host] = prev+1
         return
 
     def increment(self, what, host, play=None, task=None):
         ''' helper function to bump a statistic '''
-        if not play and not task:
-            return self.original_increment(what, host)
-
         self.processed[host] = 1
-        self._increment_nested_dict(what, host, play, task)
+        self.original_increment(what, host)
+        if not play and not task:
+            return
+
+        #self._increment_nested_dict(what, host, play, task)
         self._increment_playbook_dict(what, host, play, task)
 
     def _get_role_key(self, task):
@@ -62,10 +62,8 @@ class SubspaceAggregateStats:
             role_key = task.name
         elif not getattr(task, '_role', None):
             role_key = "No Role"
-            print "WARNING: There is something fishy here: %s" % (task.__dict__,)
         elif not getattr(task._role, '_role_name', None):
             role_key = "No Role Name"
-            print "WARNING: There is something fishy here: %s" % (task.__dict__,)
         else:
             role_key = task._role._role_name
 

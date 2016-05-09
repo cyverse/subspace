@@ -28,7 +28,7 @@ class RunnerOptions(object):
         sudo=False, sudo_user=None, become=False, become_method=None, become_user=None, become_ask_pass=False,
         ask_pass=False, private_key_file=None, remote_user='root', connection=None, timeout=None, ssh_common_args='',
         sftp_extra_args=None, scp_extra_args=None, ssh_extra_args='', poll_interval=None, seconds=None, check=False,
-        syntax=None, diff=False, force_handlers=False, flush_cache=None, listtasks=None, listtags=None, module_path=None,
+        syntax=None, diff=False, force_handlers=False, flush_cache=True, listtasks=None, listtags=None, module_path=None,
         logger=None):
         # Dynamic sensible defaults
         if not logger:
@@ -210,6 +210,7 @@ class Runner(object):
         self.variable_manager.extra_vars = self.run_data
         self.variable_manager.options_vars = load_options_vars(self.options)
 
+
     def _set_inventory(self, hosts_file):
         if not os.path.exists(hosts_file):
             raise Exception("Could not find hosts file: %s" % hosts_file)
@@ -230,8 +231,12 @@ class Runner(object):
             hostname = self.options.subset['hostname']
         elif self.options.subset and 'ip' in self.options.subset:
             hostname = self.options.subset['ip']
+
         if hostname:
             self.inventory.subset(hostname)
+            if self.options.flush_cache:
+                self.variable_manager.clear_facts(hostname)
+        #TODO: Return to fix the condition where you want to clear facts and run against a list of hosts or (all)
         return hostname
 
     def _set_playbooks(self, playbook_path, limit_playbooks):

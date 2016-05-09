@@ -23,20 +23,18 @@ class RunnerOptions(object):
     """
     def __init__(
         self, verbosity=0, inventory=None, listhosts=None, subset=None, module_paths=None, extra_vars=None,
-        forks=None, ask_vault_pass=None, vault_password_files=None, new_vault_password_file=None,
-        output_file=None, tags=None, skip_tags=None, one_line=None, tree=None, ask_sudo_pass=None, ask_su_pass=None,
-        sudo=None, sudo_user=None, become=None, become_method=None, become_user=None, become_ask_pass=None,
-        ask_pass=None, private_key_file=None, remote_user=None, connection=None, timeout=None, ssh_common_args=None,
-        sftp_extra_args=None, scp_extra_args=None, ssh_extra_args=None, poll_interval=None, seconds=None, check=None,
-        syntax=None, diff=None, force_handlers=None, flush_cache=None, listtasks=None, listtags=None, module_path=None,
+        forks=45, ask_vault_pass=False, vault_password_file=None, new_vault_password_file=None,
+        output_file=None, tags='all', skip_tags=None, one_line=None, tree=None, ask_sudo_pass=False, ask_su_pass=False,
+        sudo=False, sudo_user=None, become=False, become_method=None, become_user=None, become_ask_pass=False,
+        ask_pass=False, private_key_file=None, remote_user='root', connection=None, timeout=None, ssh_common_args='',
+        sftp_extra_args=None, scp_extra_args=None, ssh_extra_args='', poll_interval=None, seconds=None, check=False,
+        syntax=None, diff=False, force_handlers=False, flush_cache=None, listtasks=None, listtags=None, module_path=None,
         logger=None):
         # Dynamic sensible defaults
         if not logger:
             logger = default_logger
         if not connection:
             connection = 'smart'
-        if not become:
-            become = True
         if not become_method:
             become_method = 'sudo'
         if not become_user:
@@ -50,7 +48,7 @@ class RunnerOptions(object):
         self.extra_vars = extra_vars
         self.forks = forks
         self.ask_vault_pass = ask_vault_pass
-        self.vault_password_files = vault_password_files
+        self.vault_password_file = vault_password_file
         self.new_vault_password_file = new_vault_password_file
         self.output_file = output_file
         self.tags = tags

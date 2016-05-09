@@ -3,7 +3,7 @@ This Custom stats module allows more detailed information to be recorded, includ
 * What playbook is failed/unreachable
 * What task in the playbook failed/unreachable
 """
-
+DEBUG = False
 
 class SubspaceAggregateStats:
     ''' holds stats about per-host activity during playbook runs '''
@@ -52,7 +52,6 @@ class SubspaceAggregateStats:
         if not play and not task:
             return
 
-        #self._increment_nested_dict(what, host, play, task)
         self._increment_playbook_dict(what, host, play, task)
 
     def _get_role_key(self, task):
@@ -99,6 +98,9 @@ class SubspaceAggregateStats:
         return
 
     def _increment_playbook_dict(self, what, host, play, task):
+        if not DEBUG and what in ['skipped', 'ok', 'changed']:
+            return
+
         playbook_key = self._get_playbook_key(play, use_path=True)
         role_key = self._get_role_key(task)
 
@@ -116,7 +118,7 @@ class SubspaceAggregateStats:
     def summarize_playbooks(self, host):
         ''' return information about a particular host '''
 
-        return self.processed_playbooks.get(host)
+        return self.processed_playbooks.get(host, {})
 
     def summarize(self, host):
         ''' return information about a particular host '''

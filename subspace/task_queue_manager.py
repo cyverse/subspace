@@ -62,18 +62,10 @@ class TaskQueueManager(AnsibleTaskQueueManager):
         # initialize the shared dictionary containing the notified handlers
         self._initialize_notified_handlers(new_play.handlers)
 
-        # NOTE: Requires *ALL* strategies to use subspace-linear for now.
-        new_play.strategy = self.default_strategy
-
-	# NOTE: these lines can be removed upon release of ansi-2.1
-        subspace_dir = os.path.dirname(__file__)
-        strategy_loader.config = os.path.join(subspace_dir, 'plugins/strategy')
-        strategy = strategy_loader.get(new_play.strategy, self)
-
         # IF the method for loading strategy fails,
         #  this hack will ensure
         # 'Subspace' linear strategy is what gets used.
-        self._ensure_subspace_plugin()
+        strategy = self._ensure_subspace_plugin(new_play)
 
         # build the iterator
         iterator = PlayIterator(
@@ -96,10 +88,20 @@ class TaskQueueManager(AnsibleTaskQueueManager):
         self._cleanup_processes()
         return play_return
 
-    def _ensure_subspace_plugin(self):
+    def _ensure_subspace_plugin(self, new_play):
         from subspace.plugins.strategy.subspace import StrategyModule
+
+        # NOTE: Requires *ALL* strategies to use subspace-linear for now.
+        new_play.strategy = self.default_strategy
+
+	# NOTE: these lines can be removed upon release of ansi-2.1
+        subspace_dir = os.path.dirname(__file__)
+        strategy_loader.config = os.path.join(subspace_dir, 'plugins/strategy')
+        strategy = strategy_loader.get(new_play.strategy, self)
+
         if strategy is None or not isinstance(strategy, StrategyModule):
             strategy = StrategyModule(self)
 
         if not isinstance(strategy, StrategyModule):
             raise AnsibleError("Invalid play strategy specified: %s" % new_play.strategy, obj=play._ds)
+        return strategy

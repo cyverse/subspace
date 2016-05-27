@@ -11,6 +11,7 @@ from ansible.parsing.dataloader import DataLoader
 from ansible.utils.display import Display
 global_display = Display()
 
+from subspace.exceptions import NoValidHosts
 from subspace.executor import PlaybookExecutor
 from subspace.stats import SubspaceAggregateStats
 from subspace.task_queue_manager import TaskQueueManager
@@ -237,6 +238,9 @@ class Runner(object):
             if self.options.flush_cache:
                 self.variable_manager.clear_facts(hostname)
         #TODO: Return to fix the condition where you want to clear facts and run against a list of hosts or (all)
+        hosts = self.inventory.get_hosts()
+        if hostname and not hosts:
+            raise NoValidHosts("The hostname <%s> is not included in the inventory: %s" % (hostname, self.inventory.host_list))
         return hostname
 
     def _set_playbooks(self, playbook_path, limit_playbooks):

@@ -1,3 +1,2 @@
-ansible>=2.0
-#For latest 2.1 -- git+git://github.com/iPlantCollaborativeOpenSource/ansible.git@stable-2.1
+ansible==2.1
 redis==2.10.3

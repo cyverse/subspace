@@ -32,7 +32,7 @@ class CallbackModule(CallbackBase):
 
     CALLBACK_VERSION = 2.0
     #CALLBACK_NEEDS_WHITELIST = False
-    CALLBACK_TYPE = 'storage'
+    CALLBACK_TYPE = 'notification'
     CALLBACK_NAME = 'play_logger'
     username = None
 
@@ -71,9 +71,61 @@ class CallbackModule(CallbackBase):
             else:
                 self.play_logger.log.error("fatal: [%s]: FAILED! => %s" % (result._host.get_name(), self._dump_results(result._result)))
 
+    def v2_runner_item_on_ok(self, result):
+        delegated_vars = result._result.get('_ansible_delegated_vars', None)
+        if result._task.action == 'include':
+            return
+        elif result._result.get('changed', False):
+            msg = 'changed'
+        else:
+            msg = 'ok'
+
+        if delegated_vars:
+            msg += ": [%s -> %s]" % (result._host.get_name(), delegated_vars['ansible_host'])
+        else:
+            msg += ": [%s]" % result._host.get_name()
+
+        msg += " => (item=%s)" % (self._get_item(result._result),)
+
+        if (self._display.verbosity > 0 or '_ansible_verbose_always' in result._result) and not '_ansible_verbose_override' in result._result:
+            msg += " => %s" % self._dump_results(result._result)
+        self.play_logger.log.info(msg)
+
+    def v2_runner_item_on_failed(self, result):
+        delegated_vars = result._result.get('_ansible_delegated_vars', None)
+        if 'exception' in result._result:
+            if self._display.verbosity < 3:
+                # extract just the actual error message from the exception text
+                error = result._result['exception'].strip().split('\n')[-1]
+                msg = "An exception occurred during task execution. To see the full traceback, use -vvv. The error was: %s" % error
+            else:
+                msg = "An exception occurred during task execution. The full traceback is:\n" + result._result['exception']
+
+            self.play_logger.log.info(msg)
+
+            # finally, remove the exception from the result so it's not shown every time
+            del result._result['exception']
+
+        msg = "failed: "
+        if delegated_vars:
+            msg += "[%s -> %s]" % (result._host.get_name(), delegated_vars['ansible_host'])
+        else:
+            msg += "[%s]" % (result._host.get_name())
+
+        self.play_logger.log.info(msg + " (item=%s) => %s" % (self._get_item(result._result), self._dump_results(result._result)))
+        self._handle_warnings(result._result)
+
+    def v2_runner_item_on_skipped(self, result):
+        if C.DISPLAY_SKIPPED_HOSTS:
+            msg = "skipping: [%s] => (item=%s) " % (result._host.get_name(), self._get_item(result._result))
+            if (self._display.verbosity > 0 or '_ansible_verbose_always' in result._result) and not '_ansible_verbose_override' in result._result:
+                msg += " => %s" % self._dump_results(result._result)
+            self.play_logger.log.info(msg)
+
     def v2_runner_on_ok(self, result):
         self._clean_results(result._result, result._task.action)
         delegated_vars = result._result.get('_ansible_delegated_vars', None)
+        msg = "unknown_result:"
         if result._task.action == 'include':
             return
         elif result._result.get('changed', False):
@@ -86,11 +138,33 @@ class CallbackModule(CallbackBase):
                 msg = "ok: [%s -> %s]" % (result._host.get_name(), delegated_vars['ansible_host'])
             else:
                 msg = "ok: [%s]" % result._host.get_name()
-
+        # Always include the actual message.
+        if result._result and result._result.get('msg'):
+            result_msg = result._result['msg']
+            # if result_msg == 'All items completed':
+            #     result_msg += self._loop_result_items(result)
+            msg += " - %s" % result_msg
         if result._task.loop and 'results' in result._result:
             self._process_items(result)  # item_on_failed, item_on_skipped, item_on_ok
         else:
             self.play_logger.log.info(msg)
+
+    def _loop_result_items(self, result, prepend='', separator='\n'):
+        result_msg = prepend
+        if hasattr(result, '_task') and hasattr(result._task, 'loop_args'):
+            items = result._task.loop_args
+            if type(items) != list:
+                result_msg = self._get_task_args(result)
+                if result_msg:
+                    return result_msg
+            for item in items:
+                result_msg += "%s%s" % (separator, item)
+        return result_msg
+
+    def _get_task_args(self, result):
+        if hasattr(result, '_task') and hasattr(result._task, 'args'):
+            return result._task.args
+        return ""
 
     def v2_runner_on_skipped(self, result):
         if result._task.loop and 'results' in result._result:
@@ -135,7 +209,6 @@ class CallbackModule(CallbackBase):
                 msg = "ok: [%s -> %s]" % (result._host.get_name(), delegated_vars['ansible_host'])
             else:
                 msg = "ok: [%s]" % result._host.get_name()
-
         msg += " => (item=%s)" % (result._result['item'])
 
         self.play_logger.log.info(msg)

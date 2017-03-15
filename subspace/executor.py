@@ -1,4 +1,6 @@
 from ansible.executor import playbook_executor
+from ansible.utils.ssh_functions import check_for_controlpersist
+from ansible import constants as C
 
 
 class PlaybookExecutor(playbook_executor.PlaybookExecutor):
@@ -14,4 +16,12 @@ class PlaybookExecutor(playbook_executor.PlaybookExecutor):
             self._tqm = None
         elif tqm:
             self._tqm = tqm
+
+        # Note: We run this here to cache whether the default ansible ssh
+        # executable supports control persist.  Sometime in the future we may
+        # need to enhance this to check that ansible_ssh_executable specified
+        # in inventory is also cached.  We can't do this caching at the point
+        # where it is used (in task_executor) because that is post-fork and
+        # therefore would be discarded after every task.
+        check_for_controlpersist(C.ANSIBLE_SSH_EXECUTABLE)
 

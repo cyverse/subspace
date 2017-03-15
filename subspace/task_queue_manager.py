@@ -40,12 +40,25 @@ class TaskQueueManager(AnsibleTaskQueueManager):
 
         new_play = play.copy()
         new_play.post_validate(templar)
+        new_play.handlers = new_play.compile_roles_handlers() + new_play.handlers
 
         self.hostvars = HostVars(
             inventory=self._inventory,
             variable_manager=self._variable_manager,
             loader=self._loader,
         )
+
+        # Fork # of forks, # of hosts or serial, whichever is lowest
+        num_hosts = len(self._inventory.get_hosts(new_play.hosts, ignore_restrictions=True))
+
+        max_serial = 0
+        if new_play.serial:
+            # the play has not been post_validated here, so we may need
+            # to convert the scalar value to a list at this point
+            serial_items = new_play.serial
+            if not isinstance(serial_items, list):
+                serial_items = [serial_items]
+            max_serial = max([pct_to_int(x, num_hosts) for x in serial_items])
 
         # Fork # of forks, # of hosts or serial, whichever is lowest
         contenders =  [self._options.forks, play.serial, len(self._inventory.get_hosts(new_play.hosts))]
@@ -60,12 +73,18 @@ class TaskQueueManager(AnsibleTaskQueueManager):
         self.send_callback('v2_playbook_on_play_start', new_play)
 
         # initialize the shared dictionary containing the notified handlers
-        self._initialize_notified_handlers(new_play.handlers)
+        self._initialize_notified_handlers(new_play)
+
+
+        # load the specified strategy (or the default linear one)
+        # strategy = strategy_loader.get(new_play.strategy, self)
 
         # IF the method for loading strategy fails,
         #  this hack will ensure
         # 'Subspace' linear strategy is what gets used.
         strategy = self._ensure_subspace_plugin(new_play)
+        if strategy is None:
+            raise AnsibleError("Invalid play strategy specified: %s" % new_play.strategy, obj=play._ds)
 
         # build the iterator
         iterator = PlayIterator(
@@ -77,6 +96,16 @@ class TaskQueueManager(AnsibleTaskQueueManager):
             start_at_done=self._start_at_done,
         )
 
+        # Because the TQM may survive multiple play runs, we start by marking
+        # any hosts as failed in the iterator here which may have been marked
+        # as failed in previous runs. Then we clear the internal list of failed
+        # hosts so we know what failed this round.
+        for host_name in self._failed_hosts.keys():
+            host = self._inventory.get_host(host_name)
+            iterator.mark_host_failed(host)
+
+        self.clear_failed_hosts()
+
         # during initialization, the PlayContext will clear the start_at_task
         # field to signal that a matching task was found, so check that here
         # and remember it so we don't try to skip tasks on future plays
@@ -85,6 +114,12 @@ class TaskQueueManager(AnsibleTaskQueueManager):
 
         # and run the play using the strategy and cleanup on way out
         play_return = strategy.run(iterator, play_context)
+
+        # now re-save the hosts that failed from the iterator to our internal list
+        for host_name in iterator.get_failed_hosts():
+            self._failed_hosts[host_name] = True
+
+        strategy.cleanup()
         self._cleanup_processes()
         return play_return
 

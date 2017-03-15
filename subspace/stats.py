@@ -34,7 +34,7 @@ class SubspaceAggregateStats:
         """
         self.processed_playbooks = {}
         self.processed = {}
-        self.failures  = {}
+        self.failed    = {}
         self.ok        = {}
         self.dark      = {}
         self.changed   = {}
@@ -125,8 +125,8 @@ class SubspaceAggregateStats:
 
         return dict(
             ok          = self.ok.get(host, {}),
-            failures    = self.failures.get(host, {}),
-            unreachable = self.dark.get(host,{}),
+            failed      = self.failed.get(host, {}),
+            unreachable = self.dark.get(host, {}),
             changed     = self.changed.get(host, {}),
             skipped     = self.skipped.get(host, {})
         )

@@ -32,7 +32,7 @@ except ImportError:
     from ansible.utils.display import Display
     display = Display()
 
-from subspace.task_queue_manager import TaskQueueManager as SubspaceTQM
+from subspace.task_queue_manager import SubspaceTaskQueueManager as SubspaceTQM
 __all__ = ['StrategyModule']
 
 
@@ -190,7 +190,7 @@ class StrategyModule(AnsibleLinearStrategyModule, AnsibleStrategyBase):
                         iterator.mark_host_failed(original_host)
 
                     # increment the failed count for this host
-                    self.increment_stat('failed', original_host.name, iterator._play, original_task)
+                    self.increment_stat('failures', original_host.name, iterator._play, original_task)
 
                     # grab the current state and if we're iterating on the rescue portion
                     # of a block then we save the failed task in a special var for use 
@@ -213,7 +213,7 @@ class StrategyModule(AnsibleLinearStrategyModule, AnsibleStrategyBase):
                     if 'changed' in task_result._result and task_result._result['changed']:
                         self.increment_stat('changed', original_host.name, iterator._play, original_task)
                 self._tqm.send_callback('v2_runner_on_failed', task_result, ignore_errors=ignore_errors)
-                self.increment_stat('failed', original_host.name, iterator._play, original_task)
+                self.increment_stat('failures', original_host.name, iterator._play, original_task)
             elif task_result.is_unreachable():
                 self._tqm._unreachable_hosts[original_host.name] = True
                 iterator._play._removed_hosts.append(original_host.name)
@@ -423,7 +423,7 @@ class StrategyModule(AnsibleLinearStrategyModule, AnsibleStrategyBase):
                 tr = TaskResult(host=host, task=included_file._task, return_data=dict(failed=True, reason=to_text(e)))
                 iterator.mark_host_failed(host)
                 self._tqm._failed_hosts[host.name] = True
-                self.increment_stat('failed', host.name, iterator._play, included_file._task)
+                self.increment_stat('failures', host.name, iterator._play, included_file._task)
                 self._tqm.send_callback('v2_runner_on_failed', tr)
             return []
 

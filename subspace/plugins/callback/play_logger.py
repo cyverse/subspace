@@ -4,6 +4,7 @@ import sys
 from datetime import datetime
 
 from ansible.plugins.callback import CallbackBase
+from ansible import constants as C
 import logging
 
 default_logger = logging.getLogger(__name__)
@@ -254,7 +255,6 @@ class CallbackModule(CallbackBase):
 
     def _traditional_summary(self, stats, h, run_time):
         t = stats.summarize(h)
-
         msg = "PLAY RECAP [%s] : %s %s %s %s %s %s" % (
             h,
             "ok: %s" % (t['ok']),

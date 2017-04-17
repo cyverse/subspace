@@ -1,35 +1,51 @@
 import os
+import stat
 import operator
 
 import logging
 
 from ansible.inventory import Inventory
 from ansible.vars import VariableManager
+from ansible.cli.playbook import CLI, PlaybookCLI
 from ansible.utils.vars import load_options_vars
 from ansible.parsing.dataloader import DataLoader
+from ansible.playbook.block import Block
+from ansible.playbook.play_context import PlayContext
+from ansible.utils.vars import load_extra_vars
+from ansible import constants as C
 
 from ansible.utils.display import Display
-global_display = Display()
+from ansible.errors import AnsibleError
 
 from subspace.exceptions import NoValidHosts
 from subspace.executor import PlaybookExecutor
 from subspace.stats import SubspaceAggregateStats
-from subspace.task_queue_manager import TaskQueueManager
+
+display = Display()
 
 default_logger = logging.getLogger(__name__)
 
+
 class RunnerOptions(object):
     """
-    RunnerOptions class to replace Ansible OptParser
+    RunnerOptions class is used to replace Ansible OptParser
     """
+
+    def __str__(self):
+        options = self.__dict__
+        return str(options)
+
+    def __repr__(self):
+        return self.__str__()
+
     def __init__(
-        self, verbosity=0, inventory=None, listhosts=None, subset=None, module_paths=None, extra_vars=None,
-        forks=45, ask_vault_pass=False, vault_password_file=None, new_vault_password_file=None,
-        output_file=None, tags='all', skip_tags=None, one_line=None, tree=None, ask_sudo_pass=False, ask_su_pass=False,
+        self, verbosity=0, inventory=None, listhosts=None, subset=None, module_paths=None, extra_vars=[],
+        forks=None, ask_vault_pass=False, vault_password_file=None, new_vault_password_file=None,
+        output_file=None, tags=[], skip_tags=[], one_line=None, tree=None, ask_sudo_pass=False, ask_su_pass=False,
         sudo=False, sudo_user=None, become=False, become_method=None, become_user=None, become_ask_pass=False,
         ask_pass=False, private_key_file=None, remote_user='root', connection=None, timeout=None, ssh_common_args='',
         sftp_extra_args=None, scp_extra_args=None, ssh_extra_args='', poll_interval=None, seconds=None, check=False,
-        syntax=None, diff=False, force_handlers=False, flush_cache=True, listtasks=None, listtags=None, module_path=None,
+        syntax=None, diff=False, force_handlers=False, flush_cache=True, listtasks=None, listtags=None, module_path=None, su=None, 
         logger=None):
         # Dynamic sensible defaults
         if not logger:
@@ -40,6 +56,12 @@ class RunnerOptions(object):
             become_method = 'sudo'
         if not become_user:
             become_user = 'root'
+        if not su:
+            su = C.DEFAULT_SU
+        if not subset:
+            subset = C.DEFAULT_SUBSET
+        if not forks:
+            forks = C.DEFAULT_FORKS
         # Set your options
         self.verbosity = verbosity
         self.inventory = inventory
@@ -58,6 +80,7 @@ class RunnerOptions(object):
         self.tree = tree
         self.ask_sudo_pass = ask_sudo_pass
         self.ask_su_pass = ask_su_pass
+        self.su = su
         self.sudo = sudo
         self.sudo_user = sudo_user
         self.become = become
@@ -86,13 +109,26 @@ class RunnerOptions(object):
         self.logger = logger
 
 
-class Runner(object):
+class PlaybookShell(PlaybookCLI):
+    """
+    PlaybookShell uses RunnerOptions to replace 'args'
+    To create a PlaybookShell:
+        runner_opts = {'verbosity':4}
+        Runner.factory(
+            host_file,
+            os.path.join(playbook_dir, playbook_path),  # Also takes a playbook directory for list-of-files.
+            extra_vars=extra_vars,
+            limit_hosts='127.0.0.1',  # or IP/Hostname
+            limit_playbooks=['check_networking.yml'] ,  #filename relative to the playbook directory
+            private_key_file="/path/to/id_rsa",
+            **runner_opts)
+    """
 
     inventory = None
     loader = None
     options = None
     playbooks = None
-    run_data = None
+    extra_vars = None
     variable_manager = None
 
     @classmethod
@@ -109,46 +145,42 @@ class Runner(object):
                * Playbooks are not executed until calling Runner.run()
         """
 
-        if 'extra_vars' in runner_options and 'run_data' not in runner_options:
+        if 'extra_vars' in runner_options and 'extra_vars' not in runner_options:
             logger.warn(
-                "WARNING: Use 'run_data' to pass extra_vars into the playbooks"
+                "WARNING: Use 'extra_vars' to pass extra_vars into the playbooks"
             )
-            run_data = runner_options['extra_vars']
+            extra_vars = runner_options['extra_vars']
         else:
-            run_data = runner_options.pop('run_data', {})
+            extra_vars = runner_options.pop('extra_vars', {})
 
         runner = Runner(
             host_file,
             playbook_path,
-            run_data=run_data,
+            extra_vars=extra_vars,
             logger=logger,
             **runner_options
         )
         return runner
 
-    def __init__(self, hosts_file, playbook_path, run_data, private_key_file,
+    def __init__(self, hosts_file, playbook_path, extra_vars, private_key_file,
                  limit_hosts=None, limit_playbooks=None,
                  group_vars_map={}, logger=None,
-                 use_password=None, **runner_opts_args):
+                 use_password=None, callback=None, **runner_opts_args):
 
-        self.run_data = run_data
+        self.callback = callback
+        self.extra_vars = extra_vars  # Override 'extra vars'
         self.options = RunnerOptions(
                 private_key_file=private_key_file,
                 subset=limit_hosts,
+                inventory=hosts_file,
                 logger=logger,
                 **runner_opts_args
             )
 
-        # Order matters here:
-        self._set_loader()
-        self._set_variable_manager()
-        self._set_inventory(hosts_file)
-
         # NOTE: Playbooks is usually a path
-        # ex:deploy_playbooks/ _OR_ util_playbooks/check_networking.yml
+        # ex: deploy_playbooks/ _OR_ util_playbooks/check_networking.yml
         # it could also be a list of playbooks to be executed.
         self._set_playbooks(playbook_path, limit_playbooks)
-        self._update_variables(group_vars_map)
 
         # Become Pass Needed if not logging in as user root
         if use_password:
@@ -156,92 +188,177 @@ class Runner(object):
         else:
             passwords = None
 
-        # Setup playbook executor, but don't run until run() called
-        tqm = TaskQueueManager(
-            inventory=self.inventory,
-            variable_manager=self.variable_manager,
-            loader=self.loader,
+    def run(self):
+
+        # Note: slightly wrong, this is written so that implicit localhost
+        # Manage passwords
+        sshpass    = None
+        becomepass    = None
+        b_vault_pass = None
+        passwords = {}
+
+        # initial error check, to make sure all specified playbooks are accessible
+        # before we start running anything through the playbook executor
+        for playbook in self.playbooks:
+            if not os.path.exists(playbook):
+                raise AnsibleError("the playbook: %s could not be found" % playbook)
+            if not (os.path.isfile(playbook) or stat.S_ISFIFO(os.stat(playbook).st_mode)):
+                raise AnsibleError("the playbook: %s does not appear to be a file" % playbook)
+
+        # don't deal with privilege escalation or passwords when we don't need to
+        if not self.options.listhosts and not self.options.listtasks and not self.options.listtags and not self.options.syntax:
+            self.normalize_become_options()
+            (sshpass, becomepass) = self.ask_passwords()
+            passwords = { 'conn_pass': sshpass, 'become_pass': becomepass }
+
+        loader = DataLoader()
+
+        if self.options.vault_password_file:
+            # read vault_pass from a file
+            b_vault_pass = CLI.read_vault_password_file(self.options.vault_password_file, loader=loader)
+            loader.set_vault_password(b_vault_pass)
+        elif self.options.ask_vault_pass:
+            b_vault_pass = self.ask_vault_passwords()
+            loader.set_vault_password(b_vault_pass)
+        elif 'VAULT_PASS' in os.environ:
+            loader.set_vault_password(os.environ['VAULT_PASS'])
+
+        # create the variable manager, which will be shared throughout
+        # the code, ensuring a consistent view of global variables
+        variable_manager = VariableManager()
+
+        # Subspace injection
+        option_extra_vars = load_extra_vars(loader=loader, options=self.options)
+        option_extra_vars.update(self.extra_vars)
+        variable_manager.extra_vars = option_extra_vars
+        # End Subspace injection
+
+        variable_manager.options_vars = load_options_vars(self.options)
+
+        # create the inventory, and filter it based on the subset specified (if any)
+        inventory = Inventory(loader=loader, variable_manager=variable_manager, host_list=self.options.inventory)
+        variable_manager.set_inventory(inventory)
+
+        # (which is not returned in list_hosts()) is taken into account for
+        # warning if inventory is empty.  But it can't be taken into account for
+        # checking if limit doesn't match any hosts.  Instead we don't worry about
+        # limit if only implicit localhost was in inventory to start with.
+        #
+        # Fix this when we rewrite inventory by making localhost a real host (and thus show up in list_hosts())
+        no_hosts = False
+        if len(inventory.list_hosts()) == 0:
+            # Empty inventory
+            display.warning("provided hosts list is empty, only localhost is available")
+            no_hosts = True
+        inventory.subset(self.options.subset)
+        if len(inventory.list_hosts()) == 0 and no_hosts is False:
+            # Invalid limit
+            raise AnsibleError("Specified --limit does not match any hosts")
+
+        # flush fact cache if requested
+        if self.options.flush_cache:
+            self._flush_cache(inventory, variable_manager)
+
+        hosts = inventory.get_hosts()
+        if self.options.subset and not hosts:
+            raise NoValidHosts("The limit <%s> is not included in the inventory: %s" % (self.options.subset, inventory.host_list))
+       # create the playbook executor, which manages running the plays via a task queue manager
+        # Subspace injection
+        pbex = PlaybookExecutor(
+            playbooks=self.playbooks,
+            inventory=inventory,
+            variable_manager=variable_manager,
+            loader=loader,
             options=self.options,
             passwords=passwords)
-        # Someday, we may have a method for this.
-        # For now, use 'debug = True' in ansible.cfg
-        # self._set_verbosity()
-        self.pbex = PlaybookExecutor(
-            playbooks=self.playbooks,
-            inventory=self.inventory,
-            variable_manager=self.variable_manager,
-            loader=self.loader,
-            options=self.options,
-            passwords=passwords,
-            tqm=tqm)
+        playbook_map = self._get_playbook_map()
+        pbex._tqm._stats = SubspaceAggregateStats(playbook_map)
+        pbex._tqm.load_callbacks()
+        pbex._tqm.send_callback(
+            'start_logging',
+            logger=self.options.logger,
+            username=self.extra_vars.get('ATMOUSERNAME', "No-User"),
+        )
+        for host in inventory._subset:
+            variables = inventory.get_vars(host)
+            self.options.logger.info(
+                "Vars found for hostname %s: %s" % (host, variables))
+        # End Subspace injection
 
-    def _include_group_vars(self, host, group_vars_map={}):
-        """
-        Look up group variables in the inventory file,
-        add to the variable_manager and loader
-        before creating a PlaybookExecutor
-        """
-        host_groups = host.groups
-        for group in host_groups:
-            file_path = group_vars_map.get(group.name, '')
-            if os.path.exists(file_path):
-                self.options.logger.info(
-                    "Adding group_vars file: %s" % (file_path,))
-                self.variable_manager.add_group_vars_file(
-                    file_path, loader=self.loader)
-        variables = self.inventory.get_vars(host.name)
-        self.options.logger.info(
-            "Vars found for hostname %s: %s" % (host.name, variables))
+        results = pbex.run()
+        # Subspace injection
+        stats = pbex._tqm._stats
+        self.stats = stats
+        # End Subspace injection
 
-    def _set_verbosity(self):
-        """
-        NOTE: Use 'debug = True' in ansible.cfg to get full verbosity
-        """
-        pass
+        if isinstance(results, list):
+            for p in results:
 
-    def _set_loader(self):
-        # Gets data from YAML/JSON files
-        self.loader = DataLoader()
-        if 'VAULT_PASS' in os.environ:
-            self.loader.set_vault_password(os.environ['VAULT_PASS'])
+                display.display('\nplaybook: %s' % p['playbook'])
+                for idx, play in enumerate(p['plays']):
+                    if play._included_path is not None:
+                        loader.set_basedir(play._included_path)
+                    else:
+                        pb_dir = os.path.realpath(os.path.dirname(p['playbook']))
+                        loader.set_basedir(pb_dir)
 
-    def _set_variable_manager(self):
-        # All the variables from all the various places
-        self.variable_manager = VariableManager()
-        self.variable_manager.extra_vars = self.run_data
-        self.variable_manager.options_vars = load_options_vars(self.options)
+                    msg = "\n  play #%d (%s): %s" % (idx + 1, ','.join(play.hosts), play.name)
+                    mytags = set(play.tags)
+                    msg += '\tTAGS: [%s]' % (','.join(mytags))
 
+                    if self.options.listhosts:
+                        playhosts = set(inventory.get_hosts(play.hosts))
+                        msg += "\n    pattern: %s\n    hosts (%d):" % (play.hosts, len(playhosts))
+                        for host in playhosts:
+                            msg += "\n      %s" % host
 
-    def _set_inventory(self, hosts_file):
-        if not os.path.exists(hosts_file):
-            raise Exception("Could not find hosts file: %s" % hosts_file)
+                    display.display(msg)
 
-        # Set inventory, using most of above objects
-        self.inventory = Inventory(
-            loader=self.loader,
-            variable_manager=self.variable_manager,
-            host_list=hosts_file)
-        self.variable_manager.set_inventory(self.inventory)
+                    all_tags = set()
+                    if self.options.listtags or self.options.listtasks:
+                        taskmsg = ''
+                        if self.options.listtasks:
+                            taskmsg = '    tasks:\n'
 
-        # --limit is defined by the 'subset' option and inventory kwarg.
-        self.host_limit = self._set_inventory_limit()
+                        def _process_block(b):
+                            taskmsg = ''
+                            for task in b.block:
+                                if isinstance(task, Block):
+                                    taskmsg += _process_block(task)
+                                else:
+                                    if task.action == 'meta':
+                                        continue
 
-    def _set_inventory_limit(self):
-        hostname = None
-        if self.options.subset and 'hostname' in self.options.subset:
-            hostname = self.options.subset['hostname']
-        elif self.options.subset and 'ip' in self.options.subset:
-            hostname = self.options.subset['ip']
+                                    all_tags.update(task.tags)
+                                    if self.options.listtasks:
+                                        cur_tags = list(mytags.union(set(task.tags)))
+                                        cur_tags.sort()
+                                        if task.name:
+                                            taskmsg += "      %s" % task.get_name()
+                                        else:
+                                            taskmsg += "      %s" % task.action
+                                        taskmsg += "\tTAGS: [%s]\n" % ', '.join(cur_tags)
 
-        if hostname:
-            self.inventory.subset(hostname)
-            if self.options.flush_cache:
-                self.variable_manager.clear_facts(hostname)
-        #TODO: Return to fix the condition where you want to clear facts and run against a list of hosts or (all)
-        hosts = self.inventory.get_hosts()
-        if hostname and not hosts:
-            raise NoValidHosts("The hostname <%s> is not included in the inventory: %s" % (hostname, self.inventory.host_list))
-        return hostname
+                            return taskmsg
+
+                        all_vars = variable_manager.get_vars(loader=loader, play=play)
+                        play_context = PlayContext(play=play, options=self.options)
+                        for block in play.compile():
+                            block = block.filter_tagged_tasks(play_context, all_vars)
+                            if not block.has_tasks():
+                                continue
+                            taskmsg += _process_block(block)
+
+                        if self.options.listtags:
+                            cur_tags = list(mytags.union(all_tags))
+                            cur_tags.sort()
+                            taskmsg += "      TASK TAGS: [%s]\n" % ', '.join(cur_tags)
+
+                        display.display(taskmsg)
+
+            return 0
+        else:
+            return results
 
     def _set_playbooks(self, playbook_path, limit_playbooks):
         if not isinstance(playbook_path, basestring):
@@ -289,17 +406,6 @@ class Runner(object):
                         files.append(os.path.join(a_dir, f))
         return files
 
-    def _update_variables(self, group_vars_map):
-        """
-        Used primarily to include group variables in the inventory
-        """
-        hosts = self.inventory.get_hosts()
-        self.options.logger.info(
-            "Running playbooks: %s on hosts: %s"
-            % (self.playbooks, hosts))
-        for host in hosts:
-            self._include_group_vars(host, group_vars_map)
-
     def _get_playbook_name(self, playbook):
         key_name = ''
         with open(playbook,'r') as the_file:
@@ -322,18 +428,6 @@ class Runner(object):
             raise ValueError("Non unique names in your playbooks will not allow CustomSubspaceStats to work properly. %s" % self.playbooks)
         return playbook_map
 
-    def run(self):
-        playbook_map = self._get_playbook_map()
-        self.pbex._tqm._stats = SubspaceAggregateStats(playbook_map)
-        self.pbex._tqm.load_callbacks()
-        self.pbex._tqm.send_callback(
-            'start_logging',
-            logger=self.options.logger,
-            username=self.run_data.get('ATMOUSERNAME', "No-User"),
-        )
-        # Results of PlaybookExecutor in stats.
-        self.pbex.run()
-        stats = self.pbex._tqm._stats
-        self.stats = stats
-
-
+# For compatability
+class Runner(PlaybookShell):
+    pass

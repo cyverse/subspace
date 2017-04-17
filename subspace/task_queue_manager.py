@@ -1,5 +1,6 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
+
 import os
 
 from ansible.errors import AnsibleError
@@ -7,22 +8,28 @@ from ansible.executor.play_iterator import PlayIterator
 from ansible.playbook.play_context import PlayContext
 from ansible.plugins import strategy_loader
 from ansible.template import Templar
+from ansible.utils.helpers import pct_to_int
 from ansible.vars.hostvars import HostVars
+from ansible.vars.reserved import warn_if_reserved
+
+from ansible.executor.task_queue_manager import TaskQueueManager
 
 try:
     from __main__ import display
 except ImportError:
     from ansible.utils.display import Display
     display = Display()
-from ansible.plugins.strategy.linear import StrategyModule \
-    as AnsibleLinearStrategy
 
-from ansible.executor.task_queue_manager import TaskQueueManager \
-    as AnsibleTaskQueueManager
+__all__ = ['SubspaceTaskQueueManager']
 
-class TaskQueueManager(AnsibleTaskQueueManager):
 
+class SubspaceTaskQueueManager(TaskQueueManager):
+
+    '''
+    The SubspaceTaskQueueManager will inject itself as the default strategy to retrieve improved logging
+    '''
     default_strategy = 'subspace'  # Use the subspace strategy by default.
+
     def run(self, play):
         '''
         Iterates over the roles/tasks in a play, using the given (or default)
@@ -36,6 +43,7 @@ class TaskQueueManager(AnsibleTaskQueueManager):
             self.load_callbacks()
 
         all_vars = self._variable_manager.get_vars(loader=self._loader, play=play)
+        warn_if_reserved(all_vars)
         templar = Templar(loader=self._loader, variables=all_vars)
 
         new_play = play.copy()
@@ -60,9 +68,8 @@ class TaskQueueManager(AnsibleTaskQueueManager):
                 serial_items = [serial_items]
             max_serial = max([pct_to_int(x, num_hosts) for x in serial_items])
 
-        # Fork # of forks, # of hosts or serial, whichever is lowest
-        contenders =  [self._options.forks, play.serial, len(self._inventory.get_hosts(new_play.hosts))]
-        contenders =  [ v for v in contenders if v is not None and v > 0 ]
+        contenders = [self._options.forks, max_serial, num_hosts]
+        contenders = [v for v in contenders if v is not None and v > 0]
         self._initialize_processes(min(contenders))
 
         play_context = PlayContext(new_play, self._options, self.passwords, self._connection_lockfile.fileno())
@@ -76,13 +83,19 @@ class TaskQueueManager(AnsibleTaskQueueManager):
         self._initialize_notified_handlers(new_play)
 
 
-        # load the specified strategy (or the default linear one)
+        ##################
+        # Subspace snippet
+
+        # # load the specified strategy (or the default linear one)
         # strategy = strategy_loader.get(new_play.strategy, self)
 
         # IF the method for loading strategy fails,
         #  this hack will ensure
         # 'Subspace' linear strategy is what gets used.
         strategy = self._ensure_subspace_plugin(new_play)
+        # END subspace snippet
+        ##################
+
         if strategy is None:
             raise AnsibleError("Invalid play strategy specified: %s" % new_play.strategy, obj=play._ds)
 
@@ -93,7 +106,7 @@ class TaskQueueManager(AnsibleTaskQueueManager):
             play_context=play_context,
             variable_manager=self._variable_manager,
             all_vars=all_vars,
-            start_at_done=self._start_at_done,
+            start_at_done = self._start_at_done,
         )
 
         # Because the TQM may survive multiple play runs, we start by marking
@@ -129,14 +142,15 @@ class TaskQueueManager(AnsibleTaskQueueManager):
         # NOTE: Requires *ALL* strategies to use subspace-linear for now.
         new_play.strategy = self.default_strategy
 
-	# NOTE: these lines can be removed upon release of ansi-2.1
+        # NOTE: Removing this line still causes failures in ansible2.3
         subspace_dir = os.path.dirname(__file__)
         strategy_loader.config = os.path.join(subspace_dir, 'plugins/strategy')
+
+        # Load subspace strategy
         strategy = strategy_loader.get(new_play.strategy, self)
 
         if strategy is None or not isinstance(strategy, StrategyModule):
             strategy = StrategyModule(self)
-
         if not isinstance(strategy, StrategyModule):
-            raise AnsibleError("Invalid play strategy specified: %s" % new_play.strategy, obj=play._ds)
+            raise AnsibleError("Invalid play strategy specified: %s" % new_play.strategy, obj=new_play._ds)
         return strategy

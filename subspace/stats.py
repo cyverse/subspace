@@ -25,7 +25,7 @@ class SubspaceAggregateStats:
           'vm64-214.iplantcollaborative.org': {
             'Playbook by name': {
               'role_or_task_name': {
-                'ok': 2, 'failed': 5, 'skipped': 3, 'unreachable': 0
+                'ok': 2, 'failures': 5, 'skipped': 3, 'unreachable': 0
               }
             }
           }
@@ -34,7 +34,7 @@ class SubspaceAggregateStats:
         """
         self.processed_playbooks = {}
         self.processed = {}
-        self.failed    = {}
+        self.failures    = {}
         self.ok        = {}
         self.dark      = {}
         self.changed   = {}
@@ -125,7 +125,7 @@ class SubspaceAggregateStats:
 
         return dict(
             ok          = self.ok.get(host, {}),
-            failed      = self.failed.get(host, {}),
+            failures      = self.failures.get(host, {}),
             unreachable = self.dark.get(host, {}),
             changed     = self.changed.get(host, {}),
             skipped     = self.skipped.get(host, {})

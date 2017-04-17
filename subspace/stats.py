@@ -23,8 +23,7 @@ class SubspaceAggregateStats:
         Completed processed_playbooks looks like this:
         self.processed_playbooks = {
           'vm64-214.iplantcollaborative.org': {
-            'Playbook by name': {
-              'role_or_task_name': {
+            ('Playbook: playbook path', 'Role: role name', 'Task: task_name') : {
                 'ok': 2, 'failures': 5, 'skipped': 3, 'unreachable': 0
               }
             }
@@ -51,8 +50,23 @@ class SubspaceAggregateStats:
         self.original_increment(what, host)
         if not play and not task:
             return
+        self._increment_tuple_dict(what, host,play, task)
+        #self._increment_playbook_dict(what, host, play, task)
 
-        self._increment_playbook_dict(what, host, play, task)
+    def _get_task_and_role(self, task):
+        if not task:
+            return ("", "")
+        if not getattr(task, 'name', None):
+            task_name = 'Unnamed Task'
+        else:
+            task_name = task.name
+        if not getattr(task, '_role', None):
+            role_name = "Unknown Role"
+        elif not getattr(task._role, '_role_name'):
+            role_name = "Unnamed Role"
+        else:
+            role_name = task._role._role_name
+        return (task_name, role_name)
 
     def _get_role_key(self, task):
         if not task:
@@ -96,6 +110,24 @@ class SubspaceAggregateStats:
         host_playbook_dict[playbook_key] = playbook_role_dict
         stat_dict[host] = host_playbook_dict
         return
+
+    def _increment_tuple_dict(self, what, host, play, task):
+        if not DEBUG and what in ['skipped', 'ok', 'changed']:
+            return
+        playbook_key = self._get_playbook_key(play, use_path=True)
+        task_name, role_name = self._get_task_and_role(task)
+
+        host_dict = self.processed_playbooks.get(host, {})
+        tuple_key = (
+            "Playbook: %s" % playbook_key,
+            "Role: %s" % role_name,
+            "Task: %s" % task_name)
+        status_dict = host_dict.get(tuple_key, {})
+
+        status_count = status_dict.get(what, 0)
+        status_dict[what] = status_count+1
+        host_dict[tuple_key] = status_dict
+        self.processed_playbooks[host] = host_dict
 
     def _increment_playbook_dict(self, what, host, play, task):
         if not DEBUG and what in ['skipped', 'ok', 'changed']:

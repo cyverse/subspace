@@ -253,7 +253,7 @@ class PlaybookShell(PlaybookCLI):
         inventory.subset(self.options.subset)
         if len(inventory.list_hosts()) == 0 and no_hosts is False:
             # Invalid limit
-            raise AnsibleError("Specified --limit does not match any hosts")
+            raise AnsibleError("Specified --limit (%s) does not match any hosts" % self.options.subset)
 
         # flush fact cache if requested
         if self.options.flush_cache:

@@ -289,6 +289,10 @@ class PlaybookShell(PlaybookCLI):
         # Subspace injection
         stats = pbex._tqm._stats
         self.stats = stats
+        # Nonpersistent fact cache stores 'register' variables. We would like
+        # to get access to stdout/stderr for specific commands and relay
+        # some of that information back to the end user.
+        self.results = dict(pbex._variable_manager._nonpersistent_fact_cache)
         # End Subspace injection
 
         if isinstance(results, list):

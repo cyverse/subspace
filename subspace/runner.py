@@ -45,7 +45,7 @@ class RunnerOptions(object):
         sudo=False, sudo_user=None, become=False, become_method=None, become_user=None, become_ask_pass=False,
         ask_pass=False, private_key_file=None, remote_user='root', connection=None, timeout=None, ssh_common_args='',
         sftp_extra_args=None, scp_extra_args=None, ssh_extra_args='', poll_interval=None, seconds=None, check=False,
-        syntax=None, diff=False, force_handlers=False, flush_cache=True, listtasks=None, listtags=None, module_path=None, su=None, 
+        syntax=None, diff=False, force_handlers=False, flush_cache=True, listtasks=None, listtags=None, module_path=None, su=None,
         logger=None):
         # Dynamic sensible defaults
         if not logger:

@@ -1,17 +1,17 @@
-try:
-    from . import constants
-    import cache
-except ImportError:
-    constants = None
-    cache = None
-
 from .version import VERSION
 
-__all__ = ['constants', 'set_constants', 'VERSION', 'cache']
+__all__ = ['configure', 'VERSION']
 
+def configure(settings=None):
+    if not settings:
+        settings = {}
 
-def set_constants(key, value=None):
-    if value is None:
-        return constants.get(key)
-    else:
-        constants.set_value(key, value)
+    import ansible.constants
+    import ansible.plugins
+    import ansible.executor.task_queue_manager
+    reload(ansible.constants)
+    reload(ansible.constants)
+    reload(ansible.executor.task_queue_manager)
+
+    for k,v in settings.iteritems():
+        setattr(ansible.constants, k, v)

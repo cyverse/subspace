@@ -5,10 +5,11 @@ This Custom stats module allows more detailed information to be recorded, includ
 """
 DEBUG = False
 
+
 class SubspaceAggregateStats:
     ''' holds stats about per-host activity during playbook runs '''
 
-    def __init__(self, playbook_map):
+    def __init__(self, play_to_path_map):
         """
         Completed dict looks like this:
         self.ok= {
@@ -18,7 +19,7 @@ class SubspaceAggregateStats:
             },
             ...
         """
-        self.playbook_map = playbook_map
+        self.play_to_path_map = play_to_path_map
         """
         Completed processed_playbooks looks like this:
         self.processed_playbooks = {
@@ -89,11 +90,7 @@ class SubspaceAggregateStats:
             playbook_key = "Unnamed Play"
         else:
             playbook_key = play.name
-        if use_path:
-            playbook_path = self.playbook_map.get(playbook_key,'N/A')
-            return playbook_path
-        else:
-            return playbook_key
+        return playbook_key
 
     def _increment_nested_dict(self, what, host, play, task):
         stat_dict = getattr(self,what)
@@ -118,7 +115,9 @@ class SubspaceAggregateStats:
         task_name, role_name = self._get_task_and_role(task)
 
         host_dict = self.processed_playbooks.get(host, {})
+        playbook_path = self.play_to_path_map.get(play.name, "N/A")
         tuple_key = (
+            "Path: %s" % playbook_path,
             "Playbook: %s" % playbook_key,
             "Role: %s" % role_name,
             "Task: %s" % task_name)

@@ -253,7 +253,7 @@ class PlaybookShell(PlaybookCLI):
         inventory.subset(self.options.subset)
         if len(inventory.list_hosts()) == 0 and no_hosts is False:
             # Invalid limit
-            raise AnsibleError("Specified --limit does not match any hosts")
+            raise AnsibleError("Specified --limit (%s) does not match any hosts" % self.options.subset)
 
         # flush fact cache if requested
         if self.options.flush_cache:
@@ -271,8 +271,8 @@ class PlaybookShell(PlaybookCLI):
             loader=loader,
             options=self.options,
             passwords=passwords)
-        playbook_map = self._get_playbook_map()
-        pbex._tqm._stats = SubspaceAggregateStats(playbook_map)
+        play_to_path_map = self._map_plays_to_playbook_path()
+        pbex._tqm._stats = SubspaceAggregateStats(play_to_path_map)
         pbex._tqm.load_callbacks()
         pbex._tqm.send_callback(
             'start_logging',
@@ -410,27 +410,29 @@ class PlaybookShell(PlaybookCLI):
                         files.append(os.path.join(a_dir, f))
         return files
 
-    def _get_playbook_name(self, playbook):
+    def _get_playbook_name(self, playbook_path):
         key_name = ''
-        with open(playbook,'r') as the_file:
+        plays = []
+        with open(playbook_path,'r') as the_file:
             for line in the_file.readlines():
                 if 'name:' in line.strip():
                     # This is the name you will find in stats.
                     key_name = line.replace('name:','').replace('- ','').strip()
-        if not key_name:
+                    plays.append(key_name)
+        if not plays:
             raise Exception(
-                "Unnamed playbooks will not allow CustomSubspaceStats to work properly.")
-        return key_name
+                "Error found in %s: All plays should include a name for CustomSubspaceStats to work properly." % playbook_path)
+        return plays
 
-    def _get_playbook_map(self):
+    def _map_plays_to_playbook_path(self):
         """
         """
-        playbook_map = {
-            self._get_playbook_name(playbook): playbook
-            for playbook in self.playbooks}
-        if len(playbook_map) != len(self.playbooks):
-            raise ValueError("Non unique names in your playbooks will not allow CustomSubspaceStats to work properly. %s" % self.playbooks)
-        return playbook_map
+        play_to_path_map = {}
+        for playbook_path in self.playbooks:
+            keys = self._get_playbook_name(playbook_path)
+            for key in keys:
+                play_to_path_map[key] = playbook_path
+        return play_to_path_map
 
 # For compatability
 class Runner(PlaybookShell):
